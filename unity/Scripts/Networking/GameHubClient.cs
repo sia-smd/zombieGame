@@ -1,68 +1,87 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR.Client;
+using ZombieGame.UnityClient.Networking.Models;
 
 namespace ZombieGame.UnityClient.Networking
 {
     /// <summary>
-    /// SignalR hub client stub. Requires Microsoft.AspNetCore.SignalR.Client in Unity.
+    /// Live SignalR client for /hubs/game.
+    /// Requires: Microsoft.AspNetCore.SignalR.Client
     /// </summary>
     public sealed class GameHubClient : IAsyncDisposable
     {
-        private readonly string _hubUrl;
-        private readonly string _accessToken;
-        // private HubConnection? _connection;
+        private readonly HubConnection _connection;
 
-        public event Action<object>? OnSyncState;
-        public event Action<object>? OnGameEvent;
+        public event Action<GameStateDto>? OnSyncState;
+        public event Action<GameEventDto>? OnGameEvent;
+        public event Action<Exception>? OnConnectionClosed;
+        public event Action<string?>? OnReconnecting;
+        public event Action<string?>? OnReconnected;
+
+        public HubConnectionState State => _connection.State;
 
         public GameHubClient(string baseUrl, string accessToken)
         {
-            _hubUrl = $"{baseUrl.TrimEnd('/')}/hubs/game?access_token={accessToken}";
-            _accessToken = accessToken;
+            var hubUrl = $"{baseUrl.TrimEnd('/')}/hubs/game?access_token={Uri.EscapeDataString(accessToken)}";
+
+            _connection = new HubConnectionBuilder()
+                .WithUrl(hubUrl)
+                .WithAutomaticReconnect()
+                .Build();
+
+            _connection.On<GameStateDto>("SyncState", state => OnSyncState?.Invoke(state));
+            _connection.On<GameEventDto>("GameEvent", evt => OnGameEvent?.Invoke(evt));
+            _connection.Closed += ex =>
+            {
+                OnConnectionClosed?.Invoke(ex ?? new Exception("Hub connection closed."));
+                return Task.CompletedTask;
+            };
+            _connection.Reconnecting += error =>
+            {
+                OnReconnecting?.Invoke(error?.Message);
+                return Task.CompletedTask;
+            };
+            _connection.Reconnected += connectionId =>
+            {
+                OnReconnected?.Invoke(connectionId);
+                return Task.CompletedTask;
+            };
         }
 
-        public Task ConnectAsync(CancellationToken ct = default)
+        public async Task ConnectAsync(CancellationToken ct = default)
         {
-            // TODO: Initialize HubConnectionBuilder
-            // _connection = new HubConnectionBuilder()
-            //     .WithUrl(_hubUrl)
-            //     .WithAutomaticReconnect()
-            //     .Build();
-            // _connection.On<object>("SyncState", state => OnSyncState?.Invoke(state));
-            // _connection.On<object>("GameEvent", evt => OnGameEvent?.Invoke(evt));
-            // return _connection.StartAsync(ct);
-            return Task.CompletedTask;
+            if (_connection.State == HubConnectionState.Connected)
+                return;
+
+            await _connection.StartAsync(ct);
         }
 
-        public Task JoinMatchAsync(Guid matchId, string sessionToken, CancellationToken ct = default)
-        {
-            // return _connection!.InvokeAsync("JoinMatch", matchId, sessionToken, ct);
-            return Task.CompletedTask;
-        }
+        public Task JoinMatchAsync(Guid matchId, string sessionToken, CancellationToken ct = default) =>
+            _connection.InvokeAsync("JoinMatch", matchId, sessionToken, ct);
 
-        public Task StartGameAsync(Guid matchId, string sessionToken, CancellationToken ct = default)
-        {
-            // return _connection!.InvokeAsync("StartGame", matchId, sessionToken, ct);
-            return Task.CompletedTask;
-        }
+        public Task StartGameAsync(Guid matchId, string sessionToken, CancellationToken ct = default) =>
+            _connection.InvokeAsync("StartGame", matchId, sessionToken, ct);
 
-        public Task PlayCardAsync(Guid matchId, string sessionToken, Guid cardId, Guid? targetUserId, string idempotencyKey, CancellationToken ct = default)
-        {
-            // return _connection!.InvokeAsync("PlayCard", matchId, sessionToken, new { cardId, targetUserId, idempotencyKey }, ct);
-            return Task.CompletedTask;
-        }
+        public Task PlayCardAsync(Guid matchId, string sessionToken, PlayCardRequest request, CancellationToken ct = default) =>
+            _connection.InvokeAsync("PlayCard", matchId, sessionToken, request, ct);
 
-        public Task SyncStateAsync(Guid matchId, string sessionToken, CancellationToken ct = default)
-        {
-            // return _connection!.InvokeAsync("SyncState", matchId, sessionToken, ct);
-            return Task.CompletedTask;
-        }
+        public Task PassActionAsync(Guid matchId, string sessionToken, PassActionRequest request, CancellationToken ct = default) =>
+            _connection.InvokeAsync("PassAction", matchId, sessionToken, request, ct);
 
-        public ValueTask DisposeAsync()
+        public Task EndTurnAsync(Guid matchId, string sessionToken, EndTurnRequest request, CancellationToken ct = default) =>
+            _connection.InvokeAsync("EndTurn", matchId, sessionToken, request, ct);
+
+        public Task VotePlayerAsync(Guid matchId, string sessionToken, VotePlayerRequest request, CancellationToken ct = default) =>
+            _connection.InvokeAsync("VotePlayer", matchId, sessionToken, request, ct);
+
+        public Task SyncStateAsync(Guid matchId, string sessionToken, CancellationToken ct = default) =>
+            _connection.InvokeAsync("SyncState", matchId, sessionToken, ct);
+
+        public async ValueTask DisposeAsync()
         {
-            // if (_connection is not null) return _connection.DisposeAsync();
-            return ValueTask.CompletedTask;
+            await _connection.DisposeAsync();
         }
     }
 }
