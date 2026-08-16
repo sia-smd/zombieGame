@@ -1,5 +1,6 @@
 namespace ZombieGame.Application.Tests.GameRules;
 
+using ZombieGame.Application.GameRules;
 using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.GameRules.Cards.Handlers;
 using ZombieGame.Application.GameRules.Events;
@@ -12,6 +13,7 @@ public class CardEffectHandlerTests
     private readonly ShotgunHandler _shotgun;
     private readonly HealHandler _heal;
     private readonly ShieldHandler _shield;
+    private readonly HumanRoleHandler _humanRole;
     private readonly ZombieInfectionHandler _zombieInfect;
     private readonly PowerZombieInfectionHandler _powerInfect;
 
@@ -21,8 +23,120 @@ public class CardEffectHandlerTests
         _shotgun = new ShotgunHandler(_dayEvents);
         _heal = new HealHandler(transformation);
         _shield = new ShieldHandler();
-        _zombieInfect = new ZombieInfectionHandler(transformation);
-        _powerInfect = new PowerZombieInfectionHandler(transformation, shieldBlocksInfection: false);
+        _humanRole = new HumanRoleHandler();
+        _zombieInfect = new ZombieInfectionHandler(
+            transformation,
+            new FakeCardRegistry(),
+            new CardConsumptionService(),
+            _heal);
+        _powerInfect = new PowerZombieInfectionHandler(
+            transformation,
+            _dayEvents,
+            new FakeCardRegistry(),
+            new CardConsumptionService(),
+            _heal);
+    }
+
+    [Fact]
+    public void HumanRole_HasNoCombatEffect()
+    {
+        var humanId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession((humanId, PlayerRole.Human, true));
+
+        var result = _humanRole.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = humanId,
+            TargetUserId = humanId,
+            Card = TestCards.Human
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.RoleChanged);
+        Assert.Contains("no combat effect", result.Message);
+    }
+
+    [Fact]
+    public void ZombieInfection_BlockedByShieldPriority_WhenHumanHoldsShieldAndHasActions()
+    {
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (zombieId, PlayerRole.Zombie, true));
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shield);
+        state.Player(humanId).ActionsUsedThisTurn = 1;
+
+        var result = _zombieInfect.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = zombieId,
+            TargetUserId = humanId,
+            Card = TestCards.Infection
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal(CardEffectTelemetryKind.ZombieInfectionBlockedByShield, result.TelemetryKind);
+        Assert.Contains("defensive priority", result.Message);
+        Assert.Equal(PlayerRole.Human, state.Player(humanId).Role);
+    }
+
+    [Fact]
+    public void ZombieInfection_PreemptedByHealPriority_WhenHumanHoldsHealAndZombieRevealed()
+    {
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (zombieId, PlayerRole.Zombie, true));
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Heal);
+        state.Player(zombieId).HasRevealedThisDay = true;
+
+        var result = _zombieInfect.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = zombieId,
+            TargetUserId = humanId,
+            Card = TestCards.Infection
+        });
+
+        Assert.True(result.Success);
+        Assert.Contains("Heal priority", result.Message);
+        Assert.Equal(PlayerRole.Human, state.Player(zombieId).Role);
+        Assert.Equal(PlayerRole.Human, state.Player(humanId).Role);
+    }
+
+    [Fact]
+    public void Resolver_FirstInfect_ConvertsEvenWhenHumanHoldsHeal()
+    {
+        // Regression: revealing before Apply made heal-before-infect cancel the first infection.
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (zombieId, PlayerRole.Zombie, true));
+        foreach (var p in state.Players)
+        {
+            p.ActionsPerTurn = 2;
+            p.ActionsUsedThisTurn = 0;
+        }
+
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Heal);
+        var resolver = new CardEffectResolver(GameTestBuilder.CreateCardHandlers(_dayEvents), _dayEvents);
+
+        var result = resolver.Play(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = zombieId,
+            TargetUserId = humanId,
+            Card = TestCards.ZombiePoison
+        });
+
+        Assert.True(result.Success);
+        Assert.True(result.RoleChanged);
+        Assert.Equal(PlayerRole.Zombie, state.Player(humanId).Role);
+        Assert.Equal(PlayerRole.Zombie, state.Player(zombieId).Role);
+        Assert.True(state.Player(zombieId).HasRevealedThisDay);
     }
 
     [Fact]
@@ -73,11 +187,12 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void PowerZombieInfection_IgnoresShield()
+    public void PowerZombieInfection_IgnoresShield_OnNormalDay()
     {
         var humanId = Guid.NewGuid();
         var powerId = Guid.NewGuid();
         var state = GameTestBuilder.CreateSession(
+            DayEventType.NormalDay,
             (humanId, PlayerRole.Human, true),
             (powerId, PlayerRole.PowerZombie, true));
         state.Player(humanId).HasShield = true;
@@ -97,17 +212,17 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void PowerZombieInfection_BlockedByShield_WhenExperimentalMode()
+    public void PowerZombieInfection_BlockedByShield_OnStormDay()
     {
-        var handler = new PowerZombieInfectionHandler(GameTestBuilder.CreateTransformationService(), shieldBlocksInfection: true);
         var humanId = Guid.NewGuid();
         var powerId = Guid.NewGuid();
         var state = GameTestBuilder.CreateSession(
+            DayEventType.Storm,
             (humanId, PlayerRole.Human, true),
             (powerId, PlayerRole.PowerZombie, true));
         state.Player(humanId).HasShield = true;
 
-        var result = handler.Apply(new CardEffectContext
+        var result = _powerInfect.Apply(new CardEffectContext
         {
             State = state,
             ActorUserId = powerId,
@@ -123,7 +238,60 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void Heal_ConvertsZombieToHuman()
+    public void PowerZombieInfection_CannotPlay_OnSunnyDay()
+    {
+        var humanId = Guid.NewGuid();
+        var powerId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            DayEventType.SunnyDay,
+            (humanId, PlayerRole.Human, true),
+            (powerId, PlayerRole.PowerZombie, true));
+
+        var context = new CardEffectContext
+        {
+            State = state,
+            ActorUserId = powerId,
+            TargetUserId = humanId,
+            Card = TestCards.PowerInfection
+        };
+
+        Assert.False(_powerInfect.CanPlay(context));
+
+        var resolver = new CardEffectResolver(GameTestBuilder.CreateCardHandlers(_dayEvents), _dayEvents);
+        Assert.Throws<ZombieGame.Application.Common.ServiceException>(() => resolver.Play(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = powerId,
+            TargetUserId = humanId,
+            Card = TestCards.ZombiePoison
+        }));
+    }
+
+    [Fact]
+    public void Heal_NoEffectOnHiddenZombie()
+    {
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (zombieId, PlayerRole.Zombie, true));
+        state.Player(zombieId).HasRevealedThisDay = false;
+
+        var result = _heal.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = humanId,
+            TargetUserId = zombieId,
+            Card = TestCards.Heal
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.RoleChanged);
+        Assert.Equal(PlayerRole.Zombie, state.Player(zombieId).Role);
+    }
+
+    [Fact]
+    public void Heal_ConvertsRevealedZombieToHuman()
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
@@ -146,13 +314,14 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void Heal_NoEffectOnPowerZombie()
+    public void Heal_DemotesRevealedPowerZombieToZombie()
     {
         var humanId = Guid.NewGuid();
         var powerId = Guid.NewGuid();
         var state = GameTestBuilder.CreateSession(
             (humanId, PlayerRole.Human, true),
             (powerId, PlayerRole.PowerZombie, true));
+        state.Player(powerId).HasRevealedThisDay = true;
 
         var result = _heal.Apply(new CardEffectContext
         {
@@ -163,6 +332,31 @@ public class CardEffectHandlerTests
         });
 
         Assert.True(result.Success);
+        Assert.True(result.RoleChanged);
+        Assert.Equal(CardEffectTelemetryKind.PowerZombieDemoted, result.TelemetryKind);
+        Assert.Equal(PlayerRole.Zombie, state.Player(powerId).Role);
+    }
+
+    [Fact]
+    public void Heal_NoEffectOnHiddenPowerZombie()
+    {
+        var humanId = Guid.NewGuid();
+        var powerId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (powerId, PlayerRole.PowerZombie, true));
+        state.Player(powerId).HasRevealedThisDay = false;
+
+        var result = _heal.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = humanId,
+            TargetUserId = powerId,
+            Card = TestCards.Heal
+        });
+
+        Assert.True(result.Success);
+        Assert.False(result.RoleChanged);
         Assert.Equal(PlayerRole.PowerZombie, state.Player(powerId).Role);
     }
 
@@ -316,5 +510,31 @@ public class CardEffectHandlerTests
 
         Assert.False(result.TargetKilled);
         Assert.True(state.Player(powerId).IsAlive);
+    }
+
+    [Fact]
+    public void ZombiePoison_CannotInfectAnotherZombie()
+    {
+        var attackerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (attackerId, PlayerRole.Zombie, true),
+            (targetId, PlayerRole.Zombie, true));
+
+        var context = new CardEffectContext
+        {
+            State = state,
+            ActorUserId = attackerId,
+            TargetUserId = targetId,
+            Card = TestCards.ZombiePoison
+        };
+
+        Assert.False(_zombieInfect.CanPlay(context));
+
+        var resolver = new CardEffectResolver(GameTestBuilder.CreateCardHandlers(_dayEvents), _dayEvents);
+        var ex = Assert.Throws<Application.Common.ServiceException>(() => resolver.Play(context));
+        Assert.Equal("Zombie Poison can only infect humans.", ex.Message);
+        Assert.Equal(PlayerRole.Zombie, state.Player(targetId).Role);
+        Assert.False(state.Player(attackerId).HasRevealedThisDay);
     }
 }

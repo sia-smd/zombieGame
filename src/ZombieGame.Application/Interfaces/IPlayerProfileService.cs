@@ -12,4 +12,16 @@ public interface IPlayerProfileService
         Guid playerId,
         UpdateProfileRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<CurrentPlayerProfileResponse> UpdateUsernameAsync(
+        Guid playerId,
+        UpdateUsernameRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<CurrentPlayerProfileResponse> UploadAvatarAsync(
+        Guid playerId,
+        UploadAvatarRequest request,
+        CancellationToken cancellationToken = default);
+
+    IReadOnlyList<AvatarOptionDto> GetAvatarOptions();
 }

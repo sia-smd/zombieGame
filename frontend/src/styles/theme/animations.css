@@ -1,0 +1,139 @@
+:root {
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+  --duration-slower: 600ms;
+
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --opacity-disabled: 0.45;
+  --opacity-muted: 0.65;
+  --opacity-overlay: 0.72;
+  --opacity-backdrop: 0.55;
+  --opacity-highlight: 0.06;
+  --opacity-border: 0.12;
+  --opacity-border-strong: 0.2;
+}
+
+@keyframes ds-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ds-fade-in-up {
+  from { opacity: 0; transform: translateY(var(--space-md)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ds-slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ds-slide-down {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ds-zoom-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ds-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ds-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(calc(var(--space-xs) * -1)); }
+  40%, 80% { transform: translateX(var(--space-xs)); }
+}
+
+@keyframes ds-pulse {
+  0%, 100% { opacity: var(--opacity-muted); }
+  50% { opacity: 1; }
+}
+
+@keyframes ds-glow-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
+}
+
+@keyframes ds-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(calc(var(--space-sm) * -1.5)); }
+}
+
+@keyframes ds-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ds-card-play {
+  0% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.06) translateY(calc(var(--space-sm) * -1)); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+.animate-ds-fade { animation: ds-fade-in var(--duration-normal) var(--ease-out) both; }
+.animate-ds-fade-up { animation: ds-fade-in-up var(--duration-normal) var(--ease-out) both; }
+.animate-ds-slide-up { animation: ds-slide-up var(--duration-slow) var(--ease-out) both; }
+.animate-ds-slide-down { animation: ds-slide-down var(--duration-slow) var(--ease-out) both; }
+.animate-ds-zoom { animation: ds-zoom-in var(--duration-normal) var(--ease-bounce) both; }
+.animate-ds-pop { animation: ds-pop var(--duration-slow) var(--ease-bounce); }
+.animate-ds-shake { animation: ds-shake var(--duration-slow) var(--ease-default); }
+.animate-ds-pulse { animation: ds-pulse var(--duration-slower) var(--ease-default) infinite; }
+.animate-ds-glow { animation: ds-glow-pulse var(--duration-slower) var(--ease-default) infinite; }
+.animate-ds-float { animation: ds-float 3s var(--ease-default) infinite; }
+.animate-ds-spin { animation: ds-spin 0.8s linear infinite; }
+.animate-ds-card-play { animation: ds-card-play var(--duration-slow) var(--ease-out); }
+
+.stagger-1 { animation-delay: calc(var(--duration-fast) * 0.3); }
+.stagger-2 { animation-delay: calc(var(--duration-fast) * 0.6); }
+.stagger-3 { animation-delay: calc(var(--duration-fast) * 0.9); }
+.stagger-4 { animation-delay: var(--duration-normal); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ds-fade,
+  .animate-ds-fade-up,
+  .animate-ds-slide-up,
+  .animate-ds-slide-down,
+  .animate-ds-zoom,
+  .animate-ds-pop,
+  .animate-ds-shake,
+  .animate-ds-pulse,
+  .animate-ds-glow,
+  .animate-ds-float,
+  .animate-ds-card-play {
+    animation: none !important;
+  }
+}
+
+html.reduce-motion .animate-ds-fade,
+html.reduce-motion .animate-ds-fade-up,
+html.reduce-motion .animate-ds-slide-up,
+html.reduce-motion .animate-ds-slide-down,
+html.reduce-motion .animate-ds-zoom,
+html.reduce-motion .animate-ds-pop,
+html.reduce-motion .animate-ds-shake,
+html.reduce-motion .animate-ds-pulse,
+html.reduce-motion .animate-ds-glow,
+html.reduce-motion .animate-ds-float,
+html.reduce-motion .animate-ds-card-play {
+  animation: none !important;
+}
+
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

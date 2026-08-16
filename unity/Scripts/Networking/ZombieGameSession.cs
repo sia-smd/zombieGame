@@ -35,6 +35,13 @@ namespace ZombieGame.UnityClient.Networking
             _api = new ZombieGameApiClient(BaseUrl);
         }
 
+        public Task RegisterGuestAsync(CancellationToken ct = default) =>
+            RegisterGuestAsync(
+                Core.DeviceInfoProvider.DeviceId,
+                Core.DeviceInfoProvider.Platform,
+                Core.DeviceInfoProvider.AppVersion,
+                ct);
+
         public async Task RegisterGuestAsync(
             string deviceId,
             DevicePlatform platform,

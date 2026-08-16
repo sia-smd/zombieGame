@@ -38,6 +38,9 @@ public class CoinService : ICoinService
 
     public async Task DeductEntryFeeAsync(Guid userId, Guid matchId, CancellationToken cancellationToken = default)
     {
+        if (await _transactionRepository.ExistsAsync(userId, matchId, TransactionType.MatchEntryFee, cancellationToken))
+            return;
+
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
             ?? throw new ServiceException("User not found.");
 
@@ -60,6 +63,25 @@ public class CoinService : ICoinService
         }, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task CollectMatchEntryFeesAsync(
+        Guid matchId,
+        IEnumerable<Guid> humanUserIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = humanUserIds.Distinct().ToArray();
+        foreach (var userId in ids)
+        {
+            if (await _transactionRepository.ExistsAsync(userId, matchId, TransactionType.MatchEntryFee, cancellationToken))
+                continue;
+
+            if (!await CanAffordEntryFeeAsync(userId, cancellationToken))
+                throw new ServiceException($"Insufficient coins. Entry fee is {_settings.MatchEntryFeeCoins} coins.");
+        }
+
+        foreach (var userId in ids)
+            await DeductEntryFeeAsync(userId, matchId, cancellationToken);
     }
 
     public async Task AwardWinRewardAsync(Guid userId, Guid matchId, CancellationToken cancellationToken = default)

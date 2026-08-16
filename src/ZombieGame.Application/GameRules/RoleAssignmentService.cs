@@ -5,12 +5,12 @@ using ZombieGame.Domain.Models;
 
 public interface IRoleAssignmentService
 {
-    void AssignRoles(GameSessionState state, int playerCount);
+    void AssignRoles(GameSessionState state, int playerCount, RoleComposition? composition = null);
 }
 
 public sealed class RoleAssignmentService : IRoleAssignmentService
 {
-    public void AssignRoles(GameSessionState state, int playerCount)
+    public void AssignRoles(GameSessionState state, int playerCount, RoleComposition? composition = null)
     {
         var alive = state.Players.Where(p => p.IsAlive).ToList();
         if (alive.Count == 0) return;
@@ -25,11 +25,14 @@ public sealed class RoleAssignmentService : IRoleAssignmentService
 
         var shuffled = alive.OrderBy(_ => Random.Shared.Next()).ToList();
 
-        var (powerZombieCount, zombieCount) = playerCount switch
-        {
-            >= 16 => (1, 3),
-            _ => (1, 1)
-        };
+        var (powerZombieCount, zombieCount) = composition is not null
+            ? (composition.PowerZombieCount, composition.ZombieCount)
+            : playerCount switch
+            {
+                >= 16 => (1, 3),
+                >= 12 => (1, 1),
+                _ => (1, 1)
+            };
 
         var index = 0;
         for (var i = 0; i < powerZombieCount && index < shuffled.Count; i++, index++)

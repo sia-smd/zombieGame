@@ -21,6 +21,112 @@ public class MatchmakingController : ControllerBase
         _matchService = matchService;
     }
 
+    [HttpGet("room-config")]
+    public ActionResult<RoomConfigResponse> GetRoomConfig() =>
+        Ok(_matchmakingService.GetRoomConfig());
+
+    [HttpPost("rooms")]
+    public async Task<ActionResult<CreateRoomResponse>> CreateRoom(
+        [FromBody] CreateRoomRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            return Ok(await _matchmakingService.CreateRoomAsync(userId, request, cancellationToken));
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("rooms")]
+    public async Task<ActionResult<IReadOnlyList<OpenRoomDto>>> ListOpenRooms(CancellationToken cancellationToken)
+    {
+        return Ok(await _matchmakingService.ListOpenRoomsAsync(cancellationToken));
+    }
+
+    [HttpPost("join-room")]
+    public async Task<ActionResult<JoinOpenRoomResponse>> JoinOpenRoom(
+        [FromBody] JoinOpenRoomRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            return Ok(await _matchmakingService.JoinOpenRoomAsync(userId, request, cancellationToken));
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("leave-room")]
+    public async Task<IActionResult> LeaveWaitingRoom(
+        [FromBody] LeaveWaitingRoomRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            await _matchmakingService.LeaveWaitingRoomAsync(userId, request.MatchId, cancellationToken);
+            return NoContent();
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    [HttpPost("invites")]
+    public async Task<ActionResult<SendRoomInviteResponse>> SendInvite(
+        [FromBody] SendRoomInviteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            return Ok(await _matchmakingService.SendWaitingRoomInviteAsync(userId, request, cancellationToken));
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    [HttpPost("invites/{inviteId:guid}/accept")]
+    public async Task<ActionResult<JoinOpenRoomResponse>> AcceptInvite(
+        Guid inviteId,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            return Ok(await _matchmakingService.AcceptWaitingRoomInviteAsync(userId, inviteId, cancellationToken));
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    [HttpPost("invites/{inviteId:guid}/deny")]
+    public async Task<IActionResult> DenyInvite(Guid inviteId, CancellationToken cancellationToken)
+    {
+        var userId = GetRequiredUserId();
+        try
+        {
+            await _matchmakingService.DenyWaitingRoomInviteAsync(userId, inviteId, cancellationToken);
+            return NoContent();
+        }
+        catch (ServiceException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
     [HttpPost("queue/join")]
     public async Task<ActionResult<JoinQueueResponse>> JoinQueue(CancellationToken cancellationToken)
     {
@@ -57,14 +163,18 @@ public class MatchmakingController : ControllerBase
     [HttpGet("matches/{matchId:guid}")]
     public async Task<ActionResult<MatchSummaryResponse>> GetMatch(Guid matchId, CancellationToken cancellationToken)
     {
-        var match = await _matchService.GetMatchAsync(matchId, cancellationToken);
+        var match = await _matchService.GetMatchAsync(GetRequiredUserId(), matchId, cancellationToken);
         return match is null ? NotFound() : Ok(match);
     }
 
     [HttpGet("matches/{matchId:guid}/players")]
     public async Task<ActionResult<IReadOnlyList<MatchPlayerResponse>>> GetMatchPlayers(Guid matchId, CancellationToken cancellationToken)
     {
-        return Ok(await _matchService.GetMatchPlayersAsync(matchId, cancellationToken));
+        var players = await _matchService.GetMatchPlayersAsync(
+            GetRequiredUserId(),
+            matchId,
+            cancellationToken);
+        return players is null ? NotFound() : Ok(players);
     }
 
     private Guid GetRequiredUserId()

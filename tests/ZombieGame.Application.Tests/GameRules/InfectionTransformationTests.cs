@@ -25,7 +25,7 @@ public class InfectionTransformationTests
         _resolver = new CardEffectResolver(handlers, dayEvents);
         _engine = new GameRulesEngine(
             new RoleAssignmentService(),
-            new CardDealingService(new FakeCardRegistry(), Options.Create(new GameSettings())),
+            GameTestBuilder.CreateDealingService(),
             dayEvents,
             _resolver,
             new CardPlayValidator(),
@@ -88,7 +88,7 @@ public class InfectionTransformationTests
         GameTestBuilder.ResetActionPoints(state);
 
         var hand = state.PlayerHands.First(h => h.UserId == humanId);
-        Assert.Contains(TestCards.Shotgun.Id, hand.CardIds);
+        Assert.Equal(TestCards.Shotgun.Id, hand.InventorySlot1);
         Assert.Contains(TestCards.Shotgun.Id, hand.DisabledCardIds);
 
         var ex = Assert.Throws<ServiceException>(() =>
@@ -116,7 +116,7 @@ public class InfectionTransformationTests
         GameTestBuilder.ResetActionPoints(state);
 
         var hand = state.PlayerHands.First(h => h.UserId == humanId);
-        Assert.Contains(TestCards.Heal.Id, hand.CardIds);
+        Assert.Equal(TestCards.Heal.Id, hand.InventorySlot1);
         Assert.Contains(TestCards.Heal.Id, hand.DisabledCardIds);
 
         var ex = Assert.Throws<ServiceException>(() =>
@@ -131,19 +131,19 @@ public class InfectionTransformationTests
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
         var state = CreateDayState(humanId, zombieId);
-        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shield, TestCards.Shotgun, TestCards.Heal);
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shield, TestCards.Shotgun);
 
         var result = Infect(state, zombieId, humanId);
 
         var hand = state.PlayerHands.First(h => h.UserId == humanId);
-        Assert.Equal(3, hand.CardIds.Count);
+        Assert.Equal(2, hand.InventoryCount());
+        Assert.Equal(TestCards.Infection.Id, hand.RoleCardId);
         Assert.DoesNotContain(TestCards.Shield.Id, hand.DisabledCardIds);
         Assert.Contains(TestCards.Shotgun.Id, hand.DisabledCardIds);
-        Assert.Contains(TestCards.Heal.Id, hand.DisabledCardIds);
         Assert.NotNull(result.InfectionTransform);
         Assert.True(result.InfectionTransform!.HasRemainingShieldCard);
         Assert.Equal(1, result.InfectionTransform.DisabledShotguns);
-        Assert.Equal(1, result.InfectionTransform.DisabledHeals);
+        Assert.Equal(0, result.InfectionTransform.DisabledHeals);
     }
 
     private static GameSessionState CreateDayState(Guid humanId, Guid zombieId)

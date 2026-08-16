@@ -21,9 +21,13 @@ public static partial class DependencyInjection
         services.AddScoped<IPlayerSessionRepository, PlayerSessionRepository>();
         services.AddScoped<IPlayerDeviceRepository, PlayerDeviceRepository>();
         services.AddScoped<IPlayerLoginLogRepository, PlayerLoginLogRepository>();
+        services.AddScoped<IAccountRecoveryChallengeRepository, AccountRecoveryChallengeRepository>();
         services.AddScoped<IMatchRepository, MatchRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         services.AddScoped<IGameActionLogRepository, GameActionLogRepository>();
+        services.AddScoped<IPlayerStatRepository, PlayerStatRepository>();
+        services.AddScoped<IAchievementRepository, AchievementRepository>();
+        services.AddScoped<IPlayerAchievementRepository, PlayerAchievementRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();

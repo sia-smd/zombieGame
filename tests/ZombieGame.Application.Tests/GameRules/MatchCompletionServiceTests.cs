@@ -42,4 +42,24 @@ public class MatchCompletionServiceTests
         Assert.Contains(humanId, coinService.Winners);
         Assert.Contains(zombieId, coinService.Losers);
     }
+
+    [Fact]
+    public async Task CompleteMatch_IsIdempotentOnceFinished()
+    {
+        var humanId = Guid.NewGuid();
+        var match = new Match
+        {
+            Id = Guid.NewGuid(),
+            Status = MatchStatus.Finished,
+            Players = [new MatchPlayer { UserId = humanId, IsBot = false }]
+        };
+        var state = GameTestBuilder.CreateSession((humanId, PlayerRole.Human, true));
+        var coinService = new FakeCoinService();
+        var service = new MatchCompletionService(coinService, new FakeMatchRepository(match), new FakeUnitOfWork());
+
+        await service.CompleteMatchAsync(match, state, WinTeam.Humans);
+
+        Assert.Empty(coinService.Winners);
+        Assert.Empty(coinService.Losers);
+    }
 }

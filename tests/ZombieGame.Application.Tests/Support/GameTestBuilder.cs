@@ -1,15 +1,27 @@
 namespace ZombieGame.Application.Tests.Support;
 
+using Microsoft.Extensions.Options;
 using ZombieGame.Application.GameRules;
 using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.GameRules.Cards.Handlers;
 using ZombieGame.Application.GameRules.Events;
+using ZombieGame.Application.Options;
+using ZombieGame.Domain.Cards;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
+using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
 
 public static class TestCards
 {
+    public static readonly CardDefinition Human = new()
+    {
+        Id = RoleCardCatalog.Human,
+        Name = "Human",
+        Type = CardType.Human,
+        EffectKey = "human_role"
+    };
+
     public static readonly CardDefinition Shotgun = new()
     {
         Id = Guid.Parse("11111111-1111-1111-1111-111111111103"),
@@ -49,6 +61,30 @@ public static class TestCards
         Type = CardType.PowerZombie,
         EffectKey = "power_zombie"
     };
+
+    public static readonly CardDefinition HumanAction = new()
+    {
+        Id = ActionCardCatalog.Visitor,
+        Name = "Visitor",
+        Type = CardType.Human,
+        EffectKey = "human_role"
+    };
+
+    public static readonly CardDefinition ZombiePoison = new()
+    {
+        Id = ActionCardCatalog.ZombiePoison,
+        Name = "Zombie Poison",
+        Type = CardType.Zombie,
+        EffectKey = "zombie_poison"
+    };
+
+    public static readonly CardDefinition Pass = new()
+    {
+        Id = ActionCardCatalog.Pass,
+        Name = "Pass",
+        Type = CardType.EventCard,
+        EffectKey = "pass"
+    };
 }
 
 public static class GameTestBuilder
@@ -77,7 +113,11 @@ public static class GameTestBuilder
                 SeatIndex = i,
                 RemainingHealth = p.Role == PlayerRole.PowerZombie ? 2 : 1
             }).ToList(),
-            PlayerHands = players.Select(p => new PlayerCardState { UserId = p.Id }).ToList()
+            PlayerHands = players.Select(p => new PlayerCardState
+            {
+                UserId = p.Id,
+                RoleCardId = RoleCardCatalog.GetRoleCardId(p.Role)
+            }).ToList()
         };
 
         return state;
@@ -87,38 +127,57 @@ public static class GameTestBuilder
         state.GetPlayer(id)!;
 
     public static IDayEventService CreateDayEventService() =>
-        new DayEventService(new IDayEventModifier[]
-        {
-            new NormalDayModifier(),
-            new SunnyDayModifier(),
-            new StormDayModifier()
-        });
+        GameRulesComposition.CreateDayEventService();
 
     public static InfectionTransformationService CreateTransformationService() =>
-        new(new FakeCardRegistry());
+        GameRulesComposition.CreateTransformationService(new FakeCardRegistry());
 
     public static ICardEffectHandler[] CreateCardHandlers(
         IDayEventService? dayEvents = null,
-        InfectionTransformationService? transformation = null,
-        bool shieldBlocksPowerZombieInfection = false)
+        InfectionTransformationService? transformation = null)
     {
         dayEvents ??= CreateDayEventService();
         transformation ??= CreateTransformationService();
-        return
-        [
-            new ShotgunHandler(dayEvents),
-            new HealHandler(transformation),
-            new ShieldHandler(),
-            new ZombieInfectionHandler(transformation),
-            new PowerZombieInfectionHandler(transformation, shieldBlocksPowerZombieInfection)
-        ];
+        var registry = new FakeCardRegistry();
+        var consumption = new CardConsumptionService();
+        return GameRulesComposition.CreateCardHandlers(dayEvents, transformation, registry, consumption);
     }
 
     public static void AddCardsToHand(GameSessionState state, Guid playerId, params CardDefinition[] cards)
     {
         var hand = state.PlayerHands.First(h => h.UserId == playerId);
-        hand.CardIds.AddRange(cards.Select(c => c.Id));
+        var player = state.GetPlayer(playerId)!;
+        if (hand.RoleCardId == Guid.Empty)
+            hand.RoleCardId = RoleCardCatalog.GetRoleCardId(player.Role);
+
+        foreach (var card in cards)
+        {
+            if (RoleCardCatalog.IsRoleCard(card.Id))
+            {
+                hand.RoleCardId = card.Id;
+                continue;
+            }
+
+            if (hand.InventorySlot1 is null)
+                hand.InventorySlot1 = card.Id;
+            else if (hand.InventorySlot2 is null)
+                hand.InventorySlot2 = card.Id;
+            else if (hand.InventorySlot3 is null)
+                hand.InventorySlot3 = card.Id;
+            else if (hand.InventorySlot4 is null)
+                hand.InventorySlot4 = card.Id;
+        }
     }
+
+    public static CardDealingService CreateDealingService(ICardRegistry? registry = null, GameSettings? settings = null)
+    {
+        registry ??= new FakeCardRegistry();
+        settings ??= new GameSettings();
+        var generator = new InventoryCardGenerator(registry, Options.Create(settings));
+        return new CardDealingService(generator, Options.Create(settings));
+    }
+
+    public static CardConsumptionService CreateConsumptionService() => new();
 
     public static void ResetActionPoints(GameSessionState state)
     {

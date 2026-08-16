@@ -2,6 +2,8 @@ namespace ZombieGame.Application.Bots;
 
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using ZombieGame.Application.Bots.Cognition;
+using ZombieGame.Application.Bots.Discussion;
 using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.Interfaces;
 using ZombieGame.Application.Options;
@@ -21,9 +23,9 @@ public class BotService : IBotService
     private readonly IMatchRepository _matchRepository;
     private readonly IUserRepository _userRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ICardRegistry _cardRegistry;
+    private readonly BotDecisionEngine _decisions;
+    private readonly BotDiscussionEngine _discussion = new();
     private readonly IGameSessionStore _sessionStore;
-    private readonly ICardPlayValidator _cardValidator;
     private readonly GameSettings _settings;
     private readonly Random _random = new();
 
@@ -39,9 +41,8 @@ public class BotService : IBotService
         _matchRepository = matchRepository;
         _userRepository = userRepository;
         _unitOfWork = unitOfWork;
-        _cardRegistry = cardRegistry;
+        _decisions = new BotDecisionEngine(cardRegistry, cardValidator);
         _sessionStore = sessionStore;
-        _cardValidator = cardValidator;
         _settings = settings.Value;
     }
 
@@ -51,35 +52,74 @@ public class BotService : IBotService
             ?? throw new InvalidOperationException("Match not found.");
 
         var botsNeeded = targetCount - match.Players.Count;
+        if (botsNeeded <= 0)
+            return;
+
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var existing in match.Players)
+        {
+            var user = await _userRepository.GetByIdAsync(existing.UserId, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(user?.Username))
+                reserved.Add(user.Username);
+        }
+
+        var nextSeat = match.Players.Count;
         for (var i = 0; i < botsNeeded; i++)
         {
             var botUserId = Guid.NewGuid();
-            var botUsername = $"Bot_{botUserId.ToString()[..8]}";
+            var botUsername = await PickBotUsernameAsync(reserved, cancellationToken);
 
             await _userRepository.AddAsync(new Domain.Entities.User
             {
                 Id = botUserId,
                 Username = botUsername,
-                PhoneNumber = $"bot-{botUserId:N}",
+                PhoneNumber = null,
                 PasswordHash = "BOT",
                 AccountType = AccountType.Guest,
                 Coins = 0,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                Profile = new Domain.Entities.PlayerProfile
+                {
+                    PlayerId = botUserId,
+                    ImageId = "avatar_default_01",
+                    Name = botUsername,
+                    Level = 1,
+                }
             }, cancellationToken);
 
-            match.Players.Add(new Domain.Entities.MatchPlayer
+            await _matchRepository.AddPlayerAsync(new Domain.Entities.MatchPlayer
             {
                 Id = Guid.NewGuid(),
                 MatchId = matchId,
                 UserId = botUserId,
                 IsBot = true,
-                SeatIndex = match.Players.Count,
+                SeatIndex = nextSeat + i,
                 JoinedAt = DateTime.UtcNow
-            });
+            }, cancellationToken);
         }
 
-        _matchRepository.Update(match);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<string> PickBotUsernameAsync(ISet<string> reserved, CancellationToken cancellationToken)
+    {
+        var shuffled = BotNameCatalog.Names
+            .Where(n => !reserved.Contains(n))
+            .OrderBy(_ => _random.Next())
+            .ToList();
+
+        foreach (var name in shuffled)
+        {
+            if (await _userRepository.GetByUsernameAsync(name, cancellationToken) is not null)
+                continue;
+
+            reserved.Add(name);
+            return name;
+        }
+
+        var fallback = $"Bot_{Guid.NewGuid().ToString("N")[..8]}";
+        reserved.Add(fallback);
+        return fallback;
     }
 
     public async Task<PendingBotAction?> DecideNextActionAsync(Guid matchId, Guid botUserId, CancellationToken cancellationToken = default)
@@ -98,14 +138,34 @@ public class BotService : IBotService
         };
     }
 
+    public BotCardPlayDecision? TryDecideCardPlay(GameSessionState state, Guid botUserId, Guid? battleOpponentId = null) =>
+        _decisions.TryFindCardPlay(state, botUserId, _random, battleOpponentId);
+
+    public Guid TryDecideVoteTarget(GameSessionState state, Guid botUserId) =>
+        _decisions.DecideVoteTarget(state, botUserId, _random);
+
+    public bool ShouldSpeakInDiscussion(GameSessionState state, Guid botUserId) =>
+        _discussion.ShouldSpeak(state, botUserId, _random);
+
+    public StructuredDiscussionMessage? TryDecideDiscussionMessage(GameSessionState state, Guid botUserId) =>
+        _discussion.DecideMessage(state, botUserId, _random);
+
+    public void RecordDiscussionSpoke(GameSessionState state, Guid botUserId) =>
+        _discussion.RecordSpoke(state, botUserId);
+
     private PendingBotAction? DecideDayAction(GameSessionState state, GamePlayerState bot)
     {
         if (bot.RemainingActions <= 0)
             return null;
 
-        var playCard = TryFindCardPlay(state, bot);
-        if (playCard is not null)
-            return playCard;
+        var play = TryDecideCardPlay(state, bot.UserId);
+        if (play is not null)
+        {
+            return new PendingBotAction(
+                "PlayCard",
+                JsonSerializer.Serialize(new { CardId = play.CardId, TargetUserId = play.TargetUserId }),
+                $"bot-{bot.UserId}-play-{Guid.NewGuid():N}");
+        }
 
         return new PendingBotAction(
             "Pass",
@@ -113,67 +173,12 @@ public class BotService : IBotService
             $"bot-{bot.UserId}-pass-{Guid.NewGuid():N}");
     }
 
-    private PendingBotAction? TryFindCardPlay(GameSessionState state, GamePlayerState bot)
-    {
-        var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == bot.UserId);
-        if (hand is null || hand.CardIds.Count == 0)
-            return null;
-
-        var shuffledCards = hand.CardIds.OrderBy(_ => _random.Next()).ToList();
-        foreach (var cardId in shuffledCards)
-        {
-            var card = _cardRegistry.GetById(cardId);
-            if (card is null) continue;
-
-            try
-            {
-                _cardValidator.ValidateRoleCanPlayCard(bot.Role, card.EffectKey);
-                _cardValidator.ValidateCardNotDisabled(hand, cardId);
-            }
-            catch
-            {
-                continue;
-            }
-
-            var targetId = PickTarget(state, bot, card.EffectKey);
-            if (targetId is null) continue;
-
-            return new PendingBotAction(
-                "PlayCard",
-                JsonSerializer.Serialize(new { CardId = cardId, TargetUserId = targetId }),
-                $"bot-{bot.UserId}-play-{Guid.NewGuid():N}");
-        }
-
-        return null;
-    }
-
     private PendingBotAction? DecideVoteAction(GameSessionState state, GamePlayerState bot)
     {
-        SuspicionScoring.EnsureInitialized(state);
-        var target = SuspicionScoring.PickHighestSuspicionTarget(state, bot.UserId);
-        return Vote(target, bot.UserId);
-    }
-
-    private static PendingBotAction Vote(Guid targetUserId, Guid botUserId) =>
-        new(
+        var target = TryDecideVoteTarget(state, bot.UserId);
+        return new PendingBotAction(
             "VotePlayer",
-            JsonSerializer.Serialize(new { TargetUserId = targetUserId }),
-            $"bot-{botUserId}-vote-{Guid.NewGuid():N}");
-
-    private static Guid? PickTarget(GameSessionState state, GamePlayerState bot, string effectKey)
-    {
-        if (effectKey.Equals("shield", StringComparison.OrdinalIgnoreCase))
-            return bot.UserId;
-
-        var alive = state.AlivePlayers.Where(p => p.UserId != bot.UserId).ToList();
-        if (alive.Count == 0) return null;
-
-        return effectKey switch
-        {
-            "infect" or "power_zombie" => alive.FirstOrDefault(p => p.Role == PlayerRole.Human)?.UserId,
-            "shoot" => alive.FirstOrDefault(p => p.IsInfectedTeam && p.HasRevealedThisDay)?.UserId,
-            "heal" => alive.FirstOrDefault(p => p.Role == PlayerRole.Zombie && p.HasRevealedThisDay)?.UserId,
-            _ => alive[Random.Shared.Next(alive.Count)].UserId
-        };
+            JsonSerializer.Serialize(new { TargetUserId = target }),
+            $"bot-{bot.UserId}-vote-{Guid.NewGuid():N}");
     }
 }

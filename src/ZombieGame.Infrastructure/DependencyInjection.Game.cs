@@ -24,11 +24,29 @@ public static partial class DependencyInjection
             services.AddSingleton<IGameSessionStore, RedisGameSessionStore>();
             services.AddSingleton<IActiveMatchRegistry, RedisActiveMatchRegistry>();
             services.AddSingleton<RedisMatchLock>();
+            services.AddSingleton<IRoomStateStore, RedisRoomStateStore>();
+            services.AddSingleton<IBattlePairHistoryStore, RedisBattlePairHistoryStore>();
+            services.AddSingleton<IDiscussionChatStore, RedisDiscussionChatStore>();
+            services.AddSingleton<IRoomLock, RedisRoomLockAdapter>();
+            services.AddSingleton<IBattleStore, RedisBattleStore>();
+            services.AddSingleton<IPlayerActiveMatchStore, RedisPlayerActiveMatchStore>();
+            services.AddSingleton<IRoomSnapshotStore, RedisRoomSnapshotStore>();
+            services.AddSingleton<IMatchEventLogStore, RedisMatchEventLogStore>();
+            services.AddSingleton<IMatchSummaryStore, RedisMatchSummaryStore>();
         }
         else
         {
             services.AddSingleton<IGameSessionStore, InMemoryGameSessionStore>();
             services.AddSingleton<IActiveMatchRegistry, InMemoryActiveMatchRegistry>();
+            services.AddSingleton<IRoomStateStore, InMemoryRoomStateStore>();
+            services.AddSingleton<IBattlePairHistoryStore, InMemoryBattlePairHistoryStore>();
+            services.AddSingleton<IDiscussionChatStore, InMemoryDiscussionChatStore>();
+            services.AddSingleton<IBattleStore, InMemoryBattleStore>();
+            services.AddSingleton<IPlayerActiveMatchStore, InMemoryPlayerActiveMatchStore>();
+            services.AddSingleton<IRoomSnapshotStore, InMemoryRoomSnapshotStore>();
+            services.AddSingleton<IMatchEventLogStore, InMemoryMatchEventLogStore>();
+            services.AddSingleton<IMatchSummaryStore, InMemoryMatchSummaryStore>();
+            services.AddSingleton<IRoomLock, InMemoryRoomLock>();
         }
 
         return services;

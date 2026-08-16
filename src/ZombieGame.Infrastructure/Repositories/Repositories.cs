@@ -2,6 +2,7 @@ namespace ZombieGame.Infrastructure.Repositories;
 
 using Microsoft.EntityFrameworkCore;
 using ZombieGame.Domain.Entities;
+using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Interfaces;
 using ZombieGame.Infrastructure.Persistence;
 
@@ -19,8 +20,13 @@ public class UserRepository : IUserRepository
             .Include(u => u.Profile)
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
-    public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
-        _context.Users.FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
+    public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
+    {
+        var normalized = username.Trim().ToLower();
+        return _context.Users.FirstOrDefaultAsync(
+            u => u.Username.ToLower() == normalized,
+            cancellationToken);
+    }
 
     public Task<User?> GetByPhoneNumberAsync(string phoneNumber, CancellationToken cancellationToken = default) =>
         _context.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber, cancellationToken);
@@ -56,12 +62,44 @@ public class MatchRepository : IMatchRepository
 
     public Task<IReadOnlyList<Match>> GetActiveMatchesAsync(CancellationToken cancellationToken = default) =>
         _context.Matches
+            .Include(m => m.Players)
             .Where(m => m.Status != Domain.Enums.MatchStatus.Finished)
             .ToListAsync(cancellationToken)
             .ContinueWith(t => (IReadOnlyList<Match>)t.Result, cancellationToken);
 
+    public async Task<IReadOnlyList<Match>> GetWaitingRoomsNeedingBotFillAsync(
+        TimeSpan minAge,
+        CancellationToken cancellationToken = default)
+    {
+        var cutoff = DateTime.UtcNow - minAge;
+        return await _context.Matches
+            .Include(m => m.Players)
+            .Where(m =>
+                m.Status == Domain.Enums.MatchStatus.Waiting &&
+                m.FillWithBots &&
+                m.CreatedAt <= cutoff &&
+                m.Players.Count < m.MaxPlayers)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Match>> GetOpenWaitingRoomsAsync(CancellationToken cancellationToken = default) =>
+        await _context.Matches
+            .Include(m => m.Players)
+                .ThenInclude(p => p.User)
+            .Where(m =>
+                m.Status == Domain.Enums.MatchStatus.Waiting &&
+                m.Players.Any(p => !p.IsBot) &&
+                m.Players.Count < m.MaxPlayers)
+            .OrderByDescending(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(Match match, CancellationToken cancellationToken = default) =>
         await _context.Matches.AddAsync(match, cancellationToken);
+
+    public async Task AddPlayerAsync(MatchPlayer player, CancellationToken cancellationToken = default) =>
+        await _context.MatchPlayers.AddAsync(player, cancellationToken);
+
+    public void RemovePlayer(MatchPlayer player) => _context.MatchPlayers.Remove(player);
 
     public void Update(Match match) => _context.Matches.Update(match);
 }
@@ -82,6 +120,15 @@ public class TransactionRepository : ITransactionRepository
             .Take(limit)
             .ToListAsync(cancellationToken)
             .ContinueWith(t => (IReadOnlyList<Transaction>)t.Result, cancellationToken);
+
+    public Task<bool> ExistsAsync(
+        Guid userId,
+        Guid matchId,
+        TransactionType type,
+        CancellationToken cancellationToken = default) =>
+        _context.Transactions.AnyAsync(
+            t => t.UserId == userId && t.MatchId == matchId && t.Type == type,
+            cancellationToken);
 }
 
 public class GameActionLogRepository : IGameActionLogRepository

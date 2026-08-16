@@ -1,0 +1,19 @@
+/* Primitive spacing scale — never use raw px in components */
+:root {
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-xl: 1.5rem;
+  --space-2xl: 2rem;
+  --space-3xl: 2.5rem;
+  --space-4xl: 3rem;
+
+  /* Component-specific spacing aliases */
+  --gap-inline: var(--space-sm);
+  --gap-stack: var(--space-md);
+  --padding-page: var(--space-lg);
+  --padding-card-sm: var(--space-md);
+  --padding-card-md: var(--space-lg);
+  --padding-card-lg: var(--space-xl);
+}

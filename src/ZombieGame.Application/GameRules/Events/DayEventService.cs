@@ -1,73 +1,43 @@
 namespace ZombieGame.Application.GameRules.Events;
 
+using Microsoft.Extensions.Options;
+using ZombieGame.Application.Options;
 using ZombieGame.Domain.Enums;
-
-public class NormalDayModifier : IDayEventModifier
-{
-    public DayEventType EventType => DayEventType.NormalDay;
-    public bool CanPowerZombieAct => true;
-    public bool CanPowerZombieBeKilled => true;
-
-    public int GetShotgunHitsRequired(PlayerRole role) => role switch
-    {
-        PlayerRole.Zombie => 1,
-        PlayerRole.PowerZombie => 2,
-        _ => 1
-    };
-}
-
-public class SunnyDayModifier : IDayEventModifier
-{
-    public DayEventType EventType => DayEventType.SunnyDay;
-    public bool CanPowerZombieAct => false;
-    public bool CanPowerZombieBeKilled => true;
-
-    public int GetShotgunHitsRequired(PlayerRole role) => role switch
-    {
-        PlayerRole.Zombie => 1,
-        PlayerRole.PowerZombie => 2,
-        _ => 1
-    };
-}
-
-public class StormDayModifier : IDayEventModifier
-{
-    public DayEventType EventType => DayEventType.Storm;
-    public bool CanPowerZombieAct => true;
-    public bool CanPowerZombieBeKilled => false;
-
-    public int GetShotgunHitsRequired(PlayerRole role) => role switch
-    {
-        PlayerRole.Zombie => 2,
-        PlayerRole.PowerZombie => int.MaxValue,
-        _ => 1
-    };
-}
 
 public class DayEventService : IDayEventService
 {
-    private readonly IReadOnlyDictionary<DayEventType, IDayEventModifier> _modifiers;
+    private readonly DayEventOptions _options;
+    private readonly Random _random;
 
-    public DayEventService(IEnumerable<IDayEventModifier> modifiers)
+    public DayEventService(IOptions<DayEventOptions> options, Random? random = null)
     {
-        _modifiers = modifiers.ToDictionary(m => m.EventType);
+        _options = options.Value;
+        _random = random ?? Random.Shared;
     }
-
-    public IDayEventModifier GetModifier(DayEventType eventType) =>
-        _modifiers[eventType];
 
     public DayEventType PickRandomEvent()
     {
-        var events = new[] { DayEventType.NormalDay, DayEventType.SunnyDay, DayEventType.Storm };
-        return events[Random.Shared.Next(events.Length)];
+        var total = _options.TotalWeight;
+        if (total <= 0)
+            return DayEventType.NormalDay;
+
+        var roll = _random.Next(total);
+        if (roll < _options.NormalWeight)
+            return DayEventType.NormalDay;
+        if (roll < _options.NormalWeight + _options.SunnyWeight)
+            return DayEventType.SunnyDay;
+        return DayEventType.Storm;
     }
 
     public int GetShotgunHitsRequired(PlayerRole role, DayEventType eventType) =>
-        GetModifier(eventType).GetShotgunHitsRequired(role);
+        GameCombatRules.GetShotgunHitsRequired(role, eventType);
 
     public bool CanPowerZombieAct(DayEventType eventType) =>
-        GetModifier(eventType).CanPowerZombieAct;
+        GameCombatRules.CanPowerZombieAttack(eventType);
 
     public bool CanPowerZombieBeKilled(DayEventType eventType) =>
-        GetModifier(eventType).CanPowerZombieBeKilled;
+        GameCombatRules.CanPowerZombieBeKilledByShotgun(eventType);
+
+    public bool DoesShieldBlockPowerZombieInfection(DayEventType eventType) =>
+        GameCombatRules.DoesShieldBlockPowerZombieInfection(eventType);
 }

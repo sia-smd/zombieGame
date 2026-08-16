@@ -18,7 +18,7 @@ public class BotPassTests
         var state = GameTestBuilder.CreateSession((botId, PlayerRole.Human, true));
         state.Players[0].ActionsPerTurn = 2;
         state.Players[0].ActionsUsedThisTurn = 0;
-        state.PlayerHands.First(h => h.UserId == botId).CardIds.Add(TestCards.Shotgun.Id);
+        state.PlayerHands.First(h => h.UserId == botId).InventorySlot1 = TestCards.Shotgun.Id;
 
         var store = new FakeSessionStore(state);
         var botService = new BotService(
@@ -56,7 +56,11 @@ public class BotPassTests
         public Task<Domain.Entities.Match?> GetBySessionTokenAsync(string sessionToken, CancellationToken cancellationToken = default) => Task.FromResult<Domain.Entities.Match?>(null);
         public Task<Domain.Entities.Match?> GetWithPlayersAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Domain.Entities.Match?>(null);
         public Task<IReadOnlyList<Domain.Entities.Match>> GetActiveMatchesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Domain.Entities.Match>>(Array.Empty<Domain.Entities.Match>());
+        public Task<IReadOnlyList<Domain.Entities.Match>> GetWaitingRoomsNeedingBotFillAsync(TimeSpan minAge, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Domain.Entities.Match>>(Array.Empty<Domain.Entities.Match>());
+        public Task<IReadOnlyList<Domain.Entities.Match>> GetOpenWaitingRoomsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Domain.Entities.Match>>(Array.Empty<Domain.Entities.Match>());
         public Task AddAsync(Domain.Entities.Match match, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddPlayerAsync(Domain.Entities.MatchPlayer player, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void RemovePlayer(Domain.Entities.MatchPlayer player) { }
         public void Update(Domain.Entities.Match match) { }
     }
 

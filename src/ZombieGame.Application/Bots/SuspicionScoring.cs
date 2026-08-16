@@ -94,6 +94,9 @@ public static class SuspicionScoring
             case CardEffectTelemetryKind.ZombieCured:
                 AddPublicSuspicion(state, actorUserId, -SuccessfulHealWeight);
                 break;
+            case CardEffectTelemetryKind.PowerZombieDemoted:
+                AddPublicSuspicion(state, actorUserId, -SuccessfulHealWeight / 2);
+                break;
         }
 
         if (result.TargetKilled)

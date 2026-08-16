@@ -19,6 +19,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<GameActionLog> GameActionLogs => Set<GameActionLog>();
     public DbSet<CardDefinition> CardDefinitions => Set<CardDefinition>();
+    public DbSet<PlayerStat> PlayerStats => Set<PlayerStat>();
+    public DbSet<Achievement> Achievements => Set<Achievement>();
+    public DbSet<PlayerAchievement> PlayerAchievements => Set<PlayerAchievement>();
+    public DbSet<AccountRecoveryChallenge> AccountRecoveryChallenges => Set<AccountRecoveryChallenge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

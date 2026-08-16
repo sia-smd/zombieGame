@@ -36,7 +36,9 @@ public static class GameStateMapper
             includeHands ? state.PlayerHands : state.PlayerHands.Select(h => new PlayerCardState
             {
                 UserId = h.UserId,
-                CardIds = new List<Guid>()
+                RoleCardId = Guid.Empty,
+                InventorySlot1 = null,
+                InventorySlot2 = null
             }).ToList());
     }
 }

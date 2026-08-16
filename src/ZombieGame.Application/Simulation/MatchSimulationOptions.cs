@@ -12,5 +12,5 @@ public class MatchSimulationOptions
     /// <summary>0 = unlimited Pass actions per day.</summary>
     public int MaxPassActionsPerDay { get; set; }
     public bool UseSuspicionBasedVoting { get; set; } = true;
-    public bool ShieldBlocksPowerZombieInfection { get; set; }
+    public BalanceScenarioType Scenario { get; set; } = BalanceScenarioType.Standard;
 }

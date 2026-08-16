@@ -33,7 +33,8 @@ public class GameSessionStateSerializerTests
                 new PlayerCardState
                 {
                     UserId = playerId,
-                    CardIds = [Guid.NewGuid()],
+                    RoleCardId = Domain.Cards.RoleCardCatalog.Human,
+                    InventorySlot1 = Guid.NewGuid(),
                     DisabledCardIds = []
                 }
             ],

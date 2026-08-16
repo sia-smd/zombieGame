@@ -16,13 +16,17 @@ public sealed class VotingService : IVotingService
     {
         var voter = state.GetPlayer(voterId)
             ?? throw new InvalidOperationException("Voter not found.");
-        var target = state.GetPlayer(targetId)
-            ?? throw new InvalidOperationException("Target not found.");
 
         if (!voter.IsAlive)
             throw new InvalidOperationException("Dead players cannot vote.");
-        if (!target.IsAlive)
-            throw new InvalidOperationException("Cannot vote for dead player.");
+
+        if (targetId != Guid.Empty)
+        {
+            var target = state.GetPlayer(targetId)
+                ?? throw new InvalidOperationException("Target not found.");
+            if (!target.IsAlive)
+                throw new InvalidOperationException("Cannot vote for dead player.");
+        }
 
         state.Votes[voterId] = targetId;
     }
@@ -39,7 +43,7 @@ public sealed class VotingService : IVotingService
 
         var aliveVoterIds = state.AlivePlayers.Select(p => p.UserId).ToHashSet();
         var validVotes = state.Votes
-            .Where(v => aliveVoterIds.Contains(v.Key))
+            .Where(v => aliveVoterIds.Contains(v.Key) && v.Value != Guid.Empty)
             .GroupBy(v => v.Value)
             .Select(g => new { TargetId = g.Key, Count = g.Count() })
             .OrderByDescending(v => v.Count)

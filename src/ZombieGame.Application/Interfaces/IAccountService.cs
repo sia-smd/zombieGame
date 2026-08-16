@@ -9,9 +9,24 @@ public interface IAccountService
         string? ipAddress,
         CancellationToken cancellationToken = default);
 
+    Task<AccountLoginResponse> LoginAsync(
+        AccountLoginRequest request,
+        string? ipAddress,
+        CancellationToken cancellationToken = default);
+
     Task<AddMobileResponse> AddMobileAsync(
         Guid playerId,
         AddMobileRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<VerifyMobileResponse> VerifyMobileAsync(
+        Guid playerId,
+        VerifyMobileRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ChangePasswordResponse> ChangePasswordAsync(
+        Guid playerId,
+        ChangePasswordRequest request,
         CancellationToken cancellationToken = default);
 
     Task<RefreshTokenResponse> RefreshTokenAsync(

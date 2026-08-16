@@ -1,29 +1,33 @@
 @baseUrl = http://localhost:5000
 @token = {{login.response.body.accessToken}}
 
-### Register
-# @name register
-POST {{baseUrl}}/api/auth/register
+### Register guest
+# @name registerGuest
+POST {{baseUrl}}/api/account/register-guest
 Content-Type: application/json
 
 {
-  "username": "player1",
-  "phoneNumber": "+15550000001",
-  "password": "password123"
+  "deviceId": "dev-001",
+  "platform": 0,
+  "appVersion": "1.0.0",
+  "nickname": "player1"
 }
 
 ### Login
 # @name login
-POST {{baseUrl}}/api/auth/login
+POST {{baseUrl}}/api/account/login
 Content-Type: application/json
 
 {
   "phoneNumber": "+15550000001",
-  "password": "password123"
+  "password": "password123",
+  "deviceId": "dev-001",
+  "platform": 0,
+  "appVersion": "1.0.0"
 }
 
 ### Profile
-GET {{baseUrl}}/api/auth/profile
+GET {{baseUrl}}/api/profile/me
 Authorization: Bearer {{token}}
 
 ### Join Queue

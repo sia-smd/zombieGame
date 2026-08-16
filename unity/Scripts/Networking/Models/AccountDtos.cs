@@ -14,6 +14,22 @@ namespace ZombieGame.UnityClient.Networking
         DateTime RefreshTokenExpiresAt,
         GuestProfileDto Profile);
 
+    public sealed record AccountLoginRequest(
+        string PhoneNumber,
+        string Password,
+        string DeviceId,
+        DevicePlatform Platform,
+        string AppVersion);
+
+    public sealed record AccountLoginResponse(
+        Guid PlayerId,
+        string Username,
+        string AccessToken,
+        string RefreshToken,
+        DateTime AccessTokenExpiresAt,
+        DateTime RefreshTokenExpiresAt,
+        GuestProfileDto Profile);
+
     public sealed record GuestProfileDto(
         string Name,
         string ImageId,

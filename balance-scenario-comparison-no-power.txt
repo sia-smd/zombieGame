@@ -1,0 +1,15 @@
+﻿══════════════════════════════════════════════════════════
+  SCENARIO COMPARISON
+══════════════════════════════════════════════════════════
+Baseline: Standard (10 Human / 1 Zombie / 1 PowerZombie)
+Compare:  No PowerZombie
+
+  Human Win %               90.91 →    94.92  (Δ +4.01)
+  Zombie Win %               9.09 →     5.08  (Δ -4.01)
+  Avg Days                  24.22 →    23.62  (Δ -0.60)
+  Avg Cards/Match           52.02 →    53.69  (Δ +1.67)
+  Shotgun/Match             10.35 →     9.53  (Δ -0.82)
+  Heal/Match                 3.22 →     3.27  (Δ +0.05)
+  Infection Success %       15.32 →    18.58  (Δ +3.26)
+  Human PASS %              74.99 →    73.55  (Δ -1.44)
+══════════════════════════════════════════════════════════

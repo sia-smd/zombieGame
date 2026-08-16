@@ -1,0 +1,68 @@
+@import './theme/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    @apply min-h-screen bg-bg text-text-primary font-body antialiased;
+  }
+
+  * {
+    @apply box-border;
+  }
+
+  button,
+  [role='button'] {
+    @apply select-none;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-secondary ring-offset-2 ring-offset-bg;
+  }
+}
+
+@layer components {
+  .ds-panel {
+    @apply rounded-3xl border border-border/10 bg-surface/90 shadow-card backdrop-blur-md;
+  }
+
+  .ds-title {
+    @apply font-display text-secondary tracking-wide;
+  }
+
+  .ds-text-glow-danger {
+    text-shadow: var(--shadow-glow-danger);
+  }
+
+  .ds-text-glow-success {
+    text-shadow: var(--shadow-glow-success);
+  }
+
+  .ds-input {
+    @apply h-11 w-full rounded-2xl border border-border/10 bg-bg/40 px-lg text-body text-text-primary
+      placeholder:text-text-muted/60 transition-colors duration-fast
+      focus:border-secondary/40 focus:outline-none focus:ring-2 focus:ring-secondary/30
+      disabled:cursor-not-allowed disabled:opacity-disabled;
+  }
+
+  /* Legacy aliases */
+  .game-panel {
+    @apply ds-panel;
+  }
+
+  .game-title {
+    @apply ds-title;
+  }
+
+  .text-glow-red {
+    @apply ds-text-glow-danger;
+  }
+
+  .text-glow-green {
+    @apply ds-text-glow-success;
+  }
+}

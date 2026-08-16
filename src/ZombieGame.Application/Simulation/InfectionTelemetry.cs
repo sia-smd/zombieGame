@@ -18,6 +18,7 @@ public sealed class InfectionMatchCounts
     public int InfectedWithRemainingShield { get; init; }
     public int DisabledShotgunsAfterInfection { get; init; }
     public int DisabledHealsAfterInfection { get; init; }
+    public int PowerZombieDemotions { get; init; }
 }
 
 public sealed class InfectionTelemetry
@@ -146,6 +147,9 @@ public static class InfectionTelemetryRecorder
                 counts.ZombieCures++;
                 counts.ZombiesConvertedToHumans++;
                 break;
+            case CardEffectTelemetryKind.PowerZombieDemoted:
+                counts.PowerZombieDemotions++;
+                break;
         }
 
         if (transform is not null)
@@ -172,7 +176,8 @@ public static class InfectionTelemetryRecorder
             PowerZombieEliminations = counts.PowerZombieEliminations,
             InfectedWithRemainingShield = counts.InfectedWithRemainingShield,
             DisabledShotgunsAfterInfection = counts.DisabledShotgunsAfterInfection,
-            DisabledHealsAfterInfection = counts.DisabledHealsAfterInfection
+            DisabledHealsAfterInfection = counts.DisabledHealsAfterInfection,
+            PowerZombieDemotions = counts.PowerZombieDemotions
         };
 }
 
@@ -191,4 +196,5 @@ public sealed class MutableInfectionMatchCounts
     public int InfectedWithRemainingShield { get; set; }
     public int DisabledShotgunsAfterInfection { get; set; }
     public int DisabledHealsAfterInfection { get; set; }
+    public int PowerZombieDemotions { get; set; }
 }

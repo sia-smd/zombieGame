@@ -8,4 +8,5 @@ public interface IMatchmakingQueue
     int Count { get; }
     bool TryDequeueBatch(int count, out List<Guid> userIds);
     void Requeue(IEnumerable<Guid> userIds);
+    DateTime? GetOldestEnqueueUtc();
 }

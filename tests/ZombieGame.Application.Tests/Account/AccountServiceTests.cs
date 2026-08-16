@@ -125,14 +125,101 @@ public class AccountServiceTests
             tokenService,
             new MockSmsService(NullLogger<MockSmsService>.Instance),
             new FakePasswordHasher(),
+            new ForbiddenWordsService(),
             Options.Create(_gameSettings),
             Options.Create(_accountSettings),
             NullLogger<AccountService>.Instance);
 
+    [Fact]
+    public async Task Login_CreatesSessionForVerifiedMobileAccount()
+    {
+        var users = new InMemoryUserRepository();
+        var sessions = new InMemorySessionRepository();
+        var devices = new InMemoryDeviceRepository();
+        var logs = new InMemoryLoginLogRepository();
+        var playerId = Guid.NewGuid();
+        users.Users.Add(new User
+        {
+            Id = playerId,
+            Username = "Survivor",
+            PhoneNumber = "+989121234567",
+            PasswordHash = "secret",
+            AccountType = AccountType.Mobile,
+            MobileVerified = true,
+            Coins = 12,
+            Profile = new PlayerProfile
+            {
+                PlayerId = playerId,
+                Name = "Survivor",
+                ImageId = "avatar_survivor_01",
+                Level = 3
+            }
+        });
+
+        var service = CreateService(
+            users,
+            new InMemoryProfileRepository(),
+            sessions,
+            devices,
+            logs,
+            new FakeTokenService());
+
+        var response = await service.LoginAsync(
+            new AccountLoginRequest(
+                "+989121234567",
+                "secret",
+                "device-login",
+                DevicePlatform.Android,
+                "1.0.0"),
+            "127.0.0.1");
+
+        Assert.Equal(playerId, response.PlayerId);
+        Assert.Equal("Survivor", response.Username);
+        Assert.Equal("access-token", response.AccessToken);
+        Assert.Equal("refresh-token", response.RefreshToken);
+        Assert.Equal(3, response.Profile.Level);
+        Assert.Single(sessions.Sessions);
+        Assert.True(sessions.Sessions[0].IsActive);
+        Assert.Single(devices.Devices);
+        Assert.Contains(logs.Logs, log => log.Action == "login");
+    }
+
+    [Fact]
+    public async Task Login_RejectsUnverifiedOrWrongPassword()
+    {
+        var users = new InMemoryUserRepository();
+        var playerId = Guid.NewGuid();
+        users.Users.Add(new User
+        {
+            Id = playerId,
+            Username = "Guest123",
+            PhoneNumber = "+989121234567",
+            PasswordHash = "secret",
+            AccountType = AccountType.Guest,
+            MobileVerified = false
+        });
+
+        var service = CreateService(
+            users,
+            new InMemoryProfileRepository(),
+            new InMemorySessionRepository(),
+            new InMemoryDeviceRepository(),
+            new InMemoryLoginLogRepository(),
+            new FakeTokenService());
+
+        await Assert.ThrowsAsync<Application.Common.ServiceException>(() =>
+            service.LoginAsync(
+                new AccountLoginRequest(
+                    "+989121234567",
+                    "secret",
+                    "device-login",
+                    DevicePlatform.Android,
+                    "1.0.0"),
+                "127.0.0.1"));
+    }
+
     private sealed class FakeTokenService : ITokenService
     {
-        public string GenerateAccessToken(Guid userId, string username) => "access-token";
-
         public TokenPairResult CreateTokenPair(Guid userId, string username, Guid sessionId) =>
             new("access-token", Guid.NewGuid().ToString(), DateTime.UtcNow.AddDays(30));
 

@@ -1,5 +1,6 @@
 namespace ZombieGame.Application.GameRules;
 
+using ZombieGame.Domain.Cards;
 using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
 
@@ -25,7 +26,10 @@ public sealed class InfectionTransformationService
         var disabledHeals = 0;
         var hasShield = false;
 
-        foreach (var cardId in hand.CardIds)
+        hand.ClearInventorySlot(ActionCardCatalog.Visitor);
+        hand.DisabledCardIds.Remove(ActionCardCatalog.Visitor);
+
+        foreach (var cardId in hand.GetInventoryCardIds())
         {
             var card = _cards.GetById(cardId);
             if (card is null) continue;
@@ -46,6 +50,12 @@ public sealed class InfectionTransformationService
             }
         }
 
+        EnsurePermanentAction(hand, ActionCardCatalog.ZombiePoison);
+
+        var player = state.GetPlayer(playerId);
+        if (player is not null)
+            hand.RoleCardId = RoleCardCatalog.GetRoleCardId(player.Role);
+
         return new InfectionTransformResult
         {
             DisabledShotguns = disabledShotguns,
@@ -54,5 +64,31 @@ public sealed class InfectionTransformationService
         };
     }
 
-    public void RevertZombieToHuman(PlayerCardState hand) => hand.DisabledCardIds.Clear();
+    public void RevertZombieToHuman(PlayerCardState hand)
+    {
+        hand.DisabledCardIds.Clear();
+        hand.RoleCardId = RoleCardCatalog.Human;
+        hand.ClearInventorySlot(ActionCardCatalog.ZombiePoison);
+        hand.DisabledCardIds.Remove(ActionCardCatalog.ZombiePoison);
+        EnsurePermanentAction(hand, ActionCardCatalog.Visitor);
+        if (!hand.GetInventoryCardIds().Contains(ActionCardCatalog.Pass))
+            EnsurePermanentAction(hand, ActionCardCatalog.Pass);
+    }
+
+    public void DemotePowerZombieToZombie(PlayerCardState hand)
+    {
+        hand.RoleCardId = RoleCardCatalog.Infection;
+    }
+
+    private static void EnsurePermanentAction(PlayerCardState hand, Guid cardId)
+    {
+        if (hand.GetInventoryCardIds().Contains(cardId))
+            return;
+
+        var emptySlot = hand.FirstEmptyInventorySlot();
+        if (emptySlot is null)
+            return;
+
+        hand.SetInventorySlot(emptySlot.Value, cardId);
+    }
 }

@@ -21,6 +21,15 @@ public sealed class BalanceStatistics
     public Dictionary<string, double> WinRateWhenRolePresentAtStart { get; set; } = new();
     public Dictionary<string, int> DayEventOccurrences { get; set; } = new();
     public Dictionary<int, int> TurnDistribution { get; set; } = new();
+    public int MinTurns { get; set; }
+    public int MaxTurns { get; set; }
+}
+
+public sealed class DetailedMatchReplayResult
+{
+    public DetailedMatchReplay Replay { get; set; } = new();
+    public string TextReport { get; set; } = string.Empty;
+    public SingleMatchOutcome Outcome { get; set; } = new();
 }
 
 public sealed class MatchSimulationResult
@@ -47,6 +56,8 @@ public sealed class SingleMatchOutcome
     public Dictionary<PlayerRole, bool> StartingRolesPresent { get; init; } = new();
     public Dictionary<string, int> CardPlaysByEffect { get; init; } = new();
     public RolePassCounts PassCounts { get; init; } = new();
+    public RoleCardPlayCounts CardPlayCounts { get; init; } = new();
+    public Dictionary<string, int> DayEventCounts { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public int HumanPlayersAtStart { get; init; }
     public int ZombiePlayersAtStart { get; init; }
     public int PowerZombiePlayersAtStart { get; init; }

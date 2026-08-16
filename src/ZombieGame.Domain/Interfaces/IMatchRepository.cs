@@ -9,6 +9,12 @@ public interface IMatchRepository
     Task<Match?> GetBySessionTokenAsync(string sessionToken, CancellationToken cancellationToken = default);
     Task<Match?> GetWithPlayersAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Match>> GetActiveMatchesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Match>> GetWaitingRoomsNeedingBotFillAsync(
+        TimeSpan minAge,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Match>> GetOpenWaitingRoomsAsync(CancellationToken cancellationToken = default);
     Task AddAsync(Match match, CancellationToken cancellationToken = default);
+    Task AddPlayerAsync(MatchPlayer player, CancellationToken cancellationToken = default);
+    void RemovePlayer(MatchPlayer player);
     void Update(Match match);
 }

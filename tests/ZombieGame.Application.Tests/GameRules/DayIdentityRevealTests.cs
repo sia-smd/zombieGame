@@ -24,7 +24,7 @@ public class DayIdentityRevealTests
         _resolver = new CardEffectResolver(handlers, dayEvents);
         _engine = new GameRulesEngine(
             new RoleAssignmentService(),
-            new CardDealingService(new FakeCardRegistry(), Options.Create(new GameSettings())),
+            GameTestBuilder.CreateDealingService(),
             dayEvents,
             _resolver,
             new CardPlayValidator(),
@@ -35,16 +35,18 @@ public class DayIdentityRevealTests
     }
 
     [Fact]
-    public void Heal_DoesNotAffectHiddenZombie_WhenZombiePassed()
+    public void Heal_NoEffectOnHiddenZombie()
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
         var state = CreateDayState(humanId, zombieId);
         state.Player(zombieId).HasRevealedThisDay = false;
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Heal);
 
-        var ex = Assert.Throws<ServiceException>(() => PlayCard(state, humanId, TestCards.Heal, zombieId));
+        var result = PlayCard(state, humanId, TestCards.Heal, zombieId);
 
-        Assert.Contains("Cannot play", ex.Message);
+        Assert.True(result.Success);
+        Assert.False(result.RoleChanged);
         Assert.Equal(PlayerRole.Zombie, state.Player(zombieId).Role);
     }
 
@@ -72,17 +74,18 @@ public class DayIdentityRevealTests
     }
 
     [Fact]
-    public void Shotgun_DoesNotAffectHiddenZombie()
+    public void Shotgun_HitsHiddenZombie_WithoutReveal()
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
         var state = CreateDayState(humanId, zombieId);
         state.Player(zombieId).HasRevealedThisDay = false;
+        GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shotgun);
 
-        var ex = Assert.Throws<ServiceException>(() => PlayCard(state, humanId, TestCards.Shotgun, zombieId));
+        var result = PlayCard(state, humanId, TestCards.Shotgun, zombieId);
 
-        Assert.Contains("Cannot play", ex.Message);
-        Assert.True(state.Player(zombieId).IsAlive);
+        Assert.True(result.Success);
+        Assert.False(state.Player(zombieId).IsAlive);
     }
 
     [Fact]

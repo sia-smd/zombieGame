@@ -1,0 +1,31 @@
+/* Light theme — future-ready */
+[data-theme='light'] {
+  --color-primary-rgb: 185 28 28;
+  --color-secondary-rgb: 180 130 15;
+  --color-danger-rgb: 220 38 38;
+  --color-success-rgb: 21 128 61;
+  --color-warning-rgb: 180 83 9;
+  --color-info-rgb: 37 99 235;
+
+  --color-bg-rgb: 248 247 245;
+  --color-surface-rgb: 255 255 255;
+  --color-card-rgb: 241 240 238;
+  --color-border-rgb: 15 23 42;
+
+  --color-text-primary-rgb: 15 23 42;
+  --color-text-secondary-rgb: 71 85 105;
+  --color-text-muted-rgb: 100 116 139;
+  --color-text-disabled-rgb: 148 163 184;
+  --color-text-inverse-rgb: 248 247 245;
+
+  --color-overlay-rgb: 15 23 42;
+
+  --opacity-shadow-sm: 0.08;
+  --opacity-shadow-md: 0.12;
+  --opacity-shadow-lg: 0.18;
+  --opacity-overlay: 0.45;
+  --opacity-backdrop: 0.35;
+  --opacity-highlight: 0.04;
+  --opacity-border: 0.12;
+  --opacity-border-strong: 0.2;
+}

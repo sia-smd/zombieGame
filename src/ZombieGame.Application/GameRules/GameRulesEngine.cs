@@ -1,5 +1,6 @@
 namespace ZombieGame.Application.GameRules;
 
+using ZombieGame.Application.Bots.Cognition;
 using ZombieGame.Application.Common;
 using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.GameRules.Events;
@@ -70,9 +71,9 @@ public sealed class GameRulesEngine : IGameRulesEngine
         state.WinTeam = WinTeam.None;
 
         _roles.AssignRoles(state, match.Players.Count);
-        _dealing.DealInitialHands(state);
+        _dealing.InitializeHands(state);
 
-        state.CurrentDayEvent = _dayEvents.PickRandomEvent();
+        state.CurrentDayEvent = DayEventType.NormalDay;
         state.Metadata["dayEvent"] = state.CurrentDayEvent.ToString();
 
         ResetDailyCombatState(state);
@@ -87,6 +88,7 @@ public sealed class GameRulesEngine : IGameRulesEngine
         var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == actorUserId)
             ?? throw new ServiceException("Player hand not found.");
 
+        _cardValidator.ValidateCardPlayable(card.Id);
         _cardValidator.ValidateCardNotDisabled(hand, card.Id);
         _cardValidator.ValidateRoleCanPlayCard(actor.Role, card.EffectKey);
         _cardValidator.ValidateTargetRequired(card.EffectKey, targetUserId, actorUserId);
@@ -104,7 +106,33 @@ public sealed class GameRulesEngine : IGameRulesEngine
         if (result.FriendlyFire)
             state.FriendlyFireCount++;
 
+        RecordProgressCounters(state, actor, result);
+
         return result;
+    }
+
+    private static void RecordProgressCounters(GameSessionState state, GamePlayerState actor, CardEffectResult result)
+    {
+        if (actor.IsBot)
+            return;
+
+        switch (result.TelemetryKind)
+        {
+            case CardEffectTelemetryKind.ZombieCured:
+            case CardEffectTelemetryKind.PowerZombieDemoted:
+                Increment(state.HealsByPlayer, actor.UserId);
+                break;
+            case CardEffectTelemetryKind.ZombieInfectionSucceeded:
+            case CardEffectTelemetryKind.PowerZombieInfectionSucceeded:
+                Increment(state.PoisonsByPlayer, actor.UserId);
+                break;
+        }
+    }
+
+    private static void Increment(Dictionary<Guid, int> counters, Guid playerId)
+    {
+        counters.TryGetValue(playerId, out var current);
+        counters[playerId] = current + 1;
     }
 
     public void PassAction(GameSessionState state, Guid actorUserId)
@@ -121,8 +149,12 @@ public sealed class GameRulesEngine : IGameRulesEngine
         if (_settings.MaxPassActionsPerDay > 0 && actor.PassesUsedThisDay >= _settings.MaxPassActionsPerDay)
             throw new ServiceException("Maximum pass actions for this day already used.");
 
+        var isFirstAction = GameCombatRules.IsFirstActionOfTurn(actor);
         ConsumeActionPoint(state, actorUserId);
         actor.PassesUsedThisDay++;
+
+        if (isFirstAction)
+            GameCombatRules.CompleteTurnAfterFirstPass(actor);
     }
 
     private void ConsumeActionPoint(GameSessionState state, Guid actorUserId)
@@ -158,6 +190,7 @@ public sealed class GameRulesEngine : IGameRulesEngine
             throw new ServiceException("Voting is only allowed during the Voting phase.");
 
         _voting.CastVote(state, voterId, targetId);
+        BotObservationRecorder.OnVote(state, voterId, targetId);
     }
 
     public WinTeam? EvaluateImmediateWin(GameSessionState state) => _winConditions.Evaluate(state);
@@ -255,7 +288,7 @@ public sealed class GameRulesEngine : IGameRulesEngine
 
         ResetDailyCombatState(state);
         ResetActionPoints(state);
-        _dealing.DealDailyCards(state);
+        _dealing.ReplenishInventory(state);
     }
 
     private void ResetActionPoints(GameSessionState state)

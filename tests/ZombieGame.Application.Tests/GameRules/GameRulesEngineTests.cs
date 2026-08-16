@@ -33,7 +33,7 @@ public class GameRulesEngineTests
         Assert.Equal(1, state.Players.Count(p => p.Role == PlayerRole.Zombie));
         Assert.Equal(6, state.Players.Count(p => p.Role == PlayerRole.Human));
         Assert.Equal(1, state.TurnNumber);
-        Assert.True(Enum.IsDefined(state.CurrentDayEvent));
+        Assert.Equal(DayEventType.NormalDay, state.CurrentDayEvent);
     }
 
     [Fact]
@@ -150,14 +150,14 @@ public class GameRulesEngineTests
         var handlers = GameTestBuilder.CreateCardHandlers(dayEvents);
         return new GameRulesEngine(
             new RoleAssignmentService(),
-            new CardDealingService(new FakeCardRegistry(), Options.Create(new GameSettings { InitialHandSize = 3 })),
+            GameTestBuilder.CreateDealingService(),
             dayEvents,
             new CardEffectResolver(handlers, dayEvents),
             new CardPlayValidator(),
             new VotingService(),
             new WinConditionService(),
             new MatchCompletionService(new FakeCoinService(), new FakeMatchRepository(match), new FakeUnitOfWork()),
-            Options.Create(new GameSettings { InitialHandSize = 3, ActionsPerTurn = 2 }));
+            Options.Create(new GameSettings { ActionsPerTurn = 2 }));
     }
 
     private static Match CreateMatch(int count)
@@ -180,6 +180,10 @@ public class GameRulesEngineTests
                 Role = PlayerRole.Human,
                 IsAlive = true
             }).ToList(),
-            PlayerHands = match.Players.Select(p => new PlayerCardState { UserId = p.UserId }).ToList()
+            PlayerHands = match.Players.Select(p => new PlayerCardState
+            {
+                UserId = p.UserId,
+                RoleCardId = Domain.Cards.RoleCardCatalog.Human
+            }).ToList()
         };
 }

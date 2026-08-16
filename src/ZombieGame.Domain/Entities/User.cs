@@ -27,4 +27,6 @@ public class User
     public ICollection<PlayerSession> Sessions { get; set; } = new List<PlayerSession>();
     public ICollection<PlayerDevice> Devices { get; set; } = new List<PlayerDevice>();
     public ICollection<PlayerLoginLog> LoginLogs { get; set; } = new List<PlayerLoginLog>();
+    public ICollection<PlayerStat> Stats { get; set; } = new List<PlayerStat>();
+    public ICollection<PlayerAchievement> Achievements { get; set; } = new List<PlayerAchievement>();
 }

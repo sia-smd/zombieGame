@@ -76,13 +76,13 @@ For faster testing set `GameSettings:MatchmakingPlayerCount` to `2`.
 | GET | `/api/profile/me` | Bearer | Full player profile + stats + inventory |
 | PUT | `/api/profile/update` | Bearer | `{ name, imageId }` |
 
-### Legacy auth (phone/password)
+### Account login
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/auth/register` | No | Register with username + phone + password |
-| POST | `/api/auth/login` | No | Login → JWT |
-| GET | `/api/auth/profile` | Bearer | Basic user profile |
+| POST | `/api/account/login` | No | Session-backed login with verified mobile, device, and password |
+
+Official accounts are created through `register-guest → add-mobile → verify-mobile → change-password`. Direct `/api/auth/register` and `/api/auth/login` were removed.
 
 ### Matchmaking
 

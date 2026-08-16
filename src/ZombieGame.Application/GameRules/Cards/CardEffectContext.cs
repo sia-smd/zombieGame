@@ -1,5 +1,6 @@
 namespace ZombieGame.Application.GameRules.Cards;
 
+using ZombieGame.Application.Common;
 using ZombieGame.Application.GameRules;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Models;
@@ -12,10 +13,10 @@ public sealed class CardEffectContext
     public required CardDefinition Card { get; init; }
 
     public GamePlayerState Actor => State.GetPlayer(ActorUserId)
-        ?? throw new InvalidOperationException("Actor not found.");
+        ?? throw new ServiceException("Actor not found.");
 
     public GamePlayerState Target => State.GetPlayer(TargetUserId)
-        ?? throw new InvalidOperationException("Target not found.");
+        ?? throw new ServiceException("Target not found.");
 }
 
 public sealed class CardEffectResult
@@ -39,5 +40,6 @@ public enum CardEffectTelemetryKind
     ZombieInfectionBlockedByShield,
     PowerZombieInfectionSucceeded,
     PowerZombieInfectionBlockedByShield,
-    ZombieCured
+    ZombieCured,
+    PowerZombieDemoted
 }

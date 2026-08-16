@@ -1,66 +1,77 @@
 namespace ZombieGame.Application.GameRules;
 
-using ZombieGame.Domain.Interfaces;
+using ZombieGame.Domain.Cards;
 using ZombieGame.Domain.Enums;
+using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
 
 public interface ICardDealingService
 {
-    void DealInitialHands(GameSessionState state);
-    void DealDailyCards(GameSessionState state);
+    void InitializeHands(GameSessionState state);
+    void ReplenishInventory(GameSessionState state);
 }
 
 public sealed class CardDealingService : ICardDealingService
 {
-    private readonly ICardRegistry _cardRegistry;
+    private readonly IInventoryCardGenerator _generator;
     private readonly Options.GameSettings _settings;
 
-    public CardDealingService(ICardRegistry cardRegistry, Microsoft.Extensions.Options.IOptions<Options.GameSettings> settings)
+    public CardDealingService(
+        IInventoryCardGenerator generator,
+        Microsoft.Extensions.Options.IOptions<Options.GameSettings> settings)
     {
-        _cardRegistry = cardRegistry;
+        _generator = generator;
         _settings = settings.Value;
     }
 
-    public void DealInitialHands(GameSessionState state) =>
-        DealCards(state, _settings.InitialHandSize);
+    public void InitializeHands(GameSessionState state)
+    {
+        foreach (var player in state.AlivePlayers)
+            SetupHand(state, player);
+    }
 
-    public void DealDailyCards(GameSessionState state) =>
-        DealCards(state, _settings.CardsDealtPerDay, respectInactivePenalty: true);
-
-    private void DealCards(GameSessionState state, int count, bool respectInactivePenalty = false)
+    public void ReplenishInventory(GameSessionState state)
     {
         foreach (var player in state.AlivePlayers)
         {
-            var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == player.UserId);
-            if (hand is null) continue;
-
-            if (respectInactivePenalty && player.InactiveForNextDealing)
+            if (player.InactiveForNextDealing)
             {
                 player.InactiveForNextDealing = false;
                 continue;
             }
 
-            var pool = GetCardPoolForRole(player.Role);
-            for (var i = 0; i < count && pool.Count > 0; i++)
-            {
-                var card = pool[Random.Shared.Next(pool.Count)];
-                hand.CardIds.Add(card.Id);
-            }
+            FillEmptySlots(state, player);
         }
     }
 
-    private void DealCards(GameSessionState state, int count) =>
-        DealCards(state, count, respectInactivePenalty: false);
-
-    private List<Domain.Entities.CardDefinition> GetCardPoolForRole(PlayerRole role)
+    private void SetupHand(GameSessionState state, GamePlayerState player)
     {
-        var all = _cardRegistry.GetAll();
-        return role switch
+        var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == player.UserId);
+        if (hand is null)
+            return;
+
+        hand.RoleCardId = RoleCardCatalog.GetRoleCardId(player.Role);
+        hand.InventorySlot1 = ActionCardCatalog.GetRoleActionFor(player.Role) ?? ActionCardCatalog.Visitor;
+        hand.InventorySlot2 = ActionCardCatalog.Pass;
+        hand.InventorySlot3 = null;
+        hand.InventorySlot4 = null;
+
+        FillEmptySlots(state, player);
+    }
+
+    private void FillEmptySlots(GameSessionState state, GamePlayerState player)
+    {
+        var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == player.UserId);
+        if (hand is null)
+            return;
+
+        var maxSlots = Math.Clamp(_settings.Inventory?.MaxSlots ?? 4, 2, PlayerHandExtensions.InventorySlotCount);
+        for (var slot = 0; slot < maxSlots; slot++)
         {
-            PlayerRole.Human => all.Where(c => c.EffectKey is "shoot" or "heal" or "shield").ToList(),
-            PlayerRole.Zombie => all.Where(c => c.EffectKey == "infect").ToList(),
-            PlayerRole.PowerZombie => all.Where(c => c.EffectKey == "power_zombie").ToList(),
-            _ => all.Where(c => c.Type != Domain.Enums.CardType.EventCard).ToList()
-        };
+            if (hand.GetInventorySlot(slot) is not null)
+                continue;
+
+            hand.SetInventorySlot(slot, _generator.GenerateForHand(hand, player.Role));
+        }
     }
 }

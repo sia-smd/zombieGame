@@ -1,9 +1,22 @@
 namespace ZombieGame.Application.Simulation;
 
+using Microsoft.Extensions.Options;
 using ZombieGame.Application.Interfaces;
+using ZombieGame.Application.Options;
 
 public sealed class MatchSimulationService : IMatchSimulationService
 {
+    private readonly DayEventOptions _dayEvents;
+    private readonly GameSettings _gameSettings;
+
+    public MatchSimulationService(
+        IOptions<DayEventOptions>? dayEvents = null,
+        IOptions<GameSettings>? gameSettings = null)
+    {
+        _dayEvents = dayEvents?.Value ?? new DayEventOptions();
+        _gameSettings = gameSettings?.Value ?? new GameSettings();
+    }
+
     public async Task<MatchSimulationResult> RunAsync(
         MatchSimulationOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -11,7 +24,7 @@ public sealed class MatchSimulationService : IMatchSimulationService
         options ??= new MatchSimulationOptions();
         var started = DateTime.UtcNow;
         var aggregator = new BalanceStatisticsAggregator();
-        var simulator = new MatchSimulator(options);
+        var simulator = CreateSimulator(options);
         var parallelism = options.MaxParallelism <= 0
             ? Environment.ProcessorCount
             : options.MaxParallelism;
@@ -24,7 +37,6 @@ public sealed class MatchSimulationService : IMatchSimulationService
                 cancellationToken.ThrowIfCancellationRequested();
                 var outcome = await simulator.RunSingleMatchAsync(options, random);
                 aggregator.Add(outcome);
-                aggregator.RecordDayEvent(outcome.StartingDayEvent);
             }
         }
         else
@@ -44,7 +56,6 @@ public sealed class MatchSimulationService : IMatchSimulationService
                     var random = new Random(seed);
                     var outcome = await simulator.RunSingleMatchAsync(options, random);
                     aggregator.Add(outcome);
-                    aggregator.RecordDayEvent(outcome.StartingDayEvent);
                 });
         }
 
@@ -125,33 +136,8 @@ public sealed class MatchSimulationService : IMatchSimulationService
             PassPenaltyMode = source.PassPenaltyMode,
             MaxPassActionsPerDay = source.MaxPassActionsPerDay,
             UseSuspicionBasedVoting = source.UseSuspicionBasedVoting,
-            ShieldBlocksPowerZombieInfection = source.ShieldBlocksPowerZombieInfection
+            Scenario = source.Scenario
         };
-
-    public async Task<PowerZombieShieldBlockComparisonResult> RunPowerZombieShieldBlockComparisonAsync(
-        MatchSimulationOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        options ??= new MatchSimulationOptions();
-        var started = DateTime.UtcNow;
-
-        var currentOptions = CloneOptions(options);
-        currentOptions.ShieldBlocksPowerZombieInfection = false;
-
-        var experimentalOptions = CloneOptions(options);
-        experimentalOptions.ShieldBlocksPowerZombieInfection = true;
-
-        var currentRules = await RunAsync(currentOptions, cancellationToken);
-        var shieldBlocks = await RunAsync(experimentalOptions, cancellationToken);
-
-        return new PowerZombieShieldBlockComparisonResult
-        {
-            Options = options,
-            CurrentRules = currentRules,
-            ShieldBlocksPowerZombie = shieldBlocks,
-            TotalElapsed = DateTime.UtcNow - started
-        };
-    }
 
     public async Task<SuspicionVotingComparisonResult> RunSuspicionVotingComparisonAsync(
         MatchSimulationOptions? options = null,
@@ -177,4 +163,20 @@ public sealed class MatchSimulationService : IMatchSimulationService
             TotalElapsed = DateTime.UtcNow - started
         };
     }
+
+    public Task<DetailedMatchReplay> RunDetailedReplayAsync(
+        MatchSimulationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= new MatchSimulationOptions { PlayerCount = 12 };
+        options.MatchCount = 1;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var random = options.RandomSeed.HasValue ? new Random(options.RandomSeed.Value) : Random.Shared;
+        var simulator = CreateSimulator(options);
+        return simulator.RunDetailedReplayAsync(options, random);
+    }
+
+    private MatchSimulator CreateSimulator(MatchSimulationOptions options) =>
+        new(options, _dayEvents, _gameSettings);
 }

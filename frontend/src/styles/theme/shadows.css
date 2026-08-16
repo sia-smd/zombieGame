@@ -1,0 +1,11 @@
+:root {
+  --shadow-sm: 0 2px 8px rgb(0 0 0 / var(--opacity-shadow-sm));
+  --shadow-md: 0 8px 24px rgb(0 0 0 / var(--opacity-shadow-md));
+  --shadow-lg: 0 16px 48px rgb(0 0 0 / var(--opacity-shadow-lg));
+  --shadow-card: var(--shadow-md), inset 0 1px 0 rgb(255 255 255 / var(--opacity-highlight));
+  --shadow-glow: 0 0 24px var(--shadow-glow-color);
+  --shadow-glow-danger: 0 0 24px var(--shadow-glow-danger-color);
+  --shadow-glow-success: 0 0 24px var(--shadow-glow-success-color);
+  --shadow-glow-warning: 0 0 24px var(--shadow-glow-warning-color);
+  --shadow-glow-primary: 0 0 24px var(--shadow-glow-primary-color);
+}

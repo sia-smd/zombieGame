@@ -9,6 +9,24 @@ public sealed class RolePassCounts
     public int Total => Human + Zombie + PowerZombie;
 }
 
+public sealed class RoleCardPlayCounts
+{
+    public int Human { get; init; }
+    public int Zombie { get; init; }
+    public int PowerZombie { get; init; }
+
+    public int Total => Human + Zombie + PowerZombie;
+}
+
+public sealed class RoleActionUsageStats
+{
+    public long TotalPasses { get; set; }
+    public long TotalCardPlays { get; set; }
+    public double AveragePassesPerMatch { get; set; }
+    public double AverageCardPlaysPerMatch { get; set; }
+    public double PassRatePercent { get; set; }
+}
+
 public sealed class RolePassUsageStats
 {
     public long TotalPasses { get; set; }
@@ -38,6 +56,9 @@ public sealed class PassUsageTelemetry
     public RolePassUsageStats Humans { get; set; } = new();
     public RolePassUsageStats Zombies { get; set; } = new();
     public RolePassUsageStats PowerZombies { get; set; } = new();
+    public RoleActionUsageStats HumanActions { get; set; } = new();
+    public RoleActionUsageStats ZombieActions { get; set; } = new();
+    public RoleActionUsageStats PowerZombieActions { get; set; } = new();
     public PassWinRateCorrelation Correlation { get; set; } = new();
 }
 

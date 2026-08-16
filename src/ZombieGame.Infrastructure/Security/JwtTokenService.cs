@@ -7,18 +7,16 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using ZombieGame.Application.Options;
+using ZombieGame.Application.Security;
 using ZombieGame.Domain.Interfaces;
 
 public class JwtTokenService : ITokenService
 {
-    public const string SessionIdClaim = "sid";
+    public const string SessionIdClaim = JwtSessionValidator.SessionIdClaim;
 
     private readonly JwtSettings _settings;
 
     public JwtTokenService(IOptions<JwtSettings> settings) => _settings = settings.Value;
-
-    public string GenerateAccessToken(Guid userId, string username) =>
-        CreateTokenPair(userId, username, Guid.NewGuid()).AccessToken;
 
     public TokenPairResult CreateTokenPair(Guid userId, string username, Guid sessionId)
     {
@@ -28,6 +26,7 @@ public class JwtTokenService : ITokenService
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.UniqueName, username),
             new Claim(JwtRegisteredClaimNames.Jti, jti),
             new Claim(SessionIdClaim, sessionId.ToString())

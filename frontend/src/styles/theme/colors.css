@@ -1,0 +1,37 @@
+/* Semantic color slots — values defined per theme in themes/*.css */
+:root {
+  --color-primary-rgb: 220 38 38;
+  --color-secondary-rgb: 212 160 23;
+  --color-danger-rgb: 185 28 28;
+  --color-success-rgb: 22 163 74;
+  --color-warning-rgb: 217 119 6;
+  --color-info-rgb: 59 130 246;
+
+  --color-bg-rgb: 10 10 12;
+  --color-surface-rgb: 18 18 24;
+  --color-card-rgb: 26 26 36;
+  --color-border-rgb: 255 255 255;
+
+  --color-text-primary-rgb: 232 230 227;
+  --color-text-secondary-rgb: 156 163 175;
+  --color-text-muted-rgb: 107 114 128;
+  --color-text-disabled-rgb: 75 85 99;
+  --color-text-inverse-rgb: 10 10 12;
+
+  --color-overlay-rgb: 0 0 0;
+
+  --shadow-glow-color: rgb(var(--color-primary-rgb) / 0.45);
+  --shadow-glow-danger-color: rgb(var(--color-danger-rgb) / 0.45);
+  --shadow-glow-success-color: rgb(var(--color-success-rgb) / 0.45);
+  --shadow-glow-warning-color: rgb(var(--color-warning-rgb) / 0.4);
+  --shadow-glow-primary-color: rgb(var(--color-primary-rgb) / 0.45);
+
+  --opacity-shadow-sm: 0.25;
+  --opacity-shadow-md: 0.45;
+  --opacity-shadow-lg: 0.6;
+
+  /* Legacy game palette aliases */
+  --color-human-rgb: var(--color-success-rgb);
+  --color-zombie-rgb: var(--color-primary-rgb);
+  --color-gold-rgb: var(--color-secondary-rgb);
+}

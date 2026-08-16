@@ -15,6 +15,9 @@ public sealed class BalanceStatisticsAggregator
     private long _totalHumanPasses;
     private long _totalZombiePasses;
     private long _totalPowerZombiePasses;
+    private long _totalHumanCardPlays;
+    private long _totalZombieCardPlays;
+    private long _totalPowerZombieRoleCardPlays;
     private long _totalHumanPlayersAtStart;
     private long _totalZombiePlayersAtStart;
     private long _totalPowerZombiePlayersAtStart;
@@ -49,6 +52,8 @@ public sealed class BalanceStatisticsAggregator
     private readonly Dictionary<string, int> _cardPlaysByEffect = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _dayEventOccurrences = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, int> _turnDistribution = new();
+    private int _minTurns = int.MaxValue;
+    private int _maxTurns;
     private readonly Dictionary<string, RoleWinTracker> _roleWinTrackers = new(StringComparer.OrdinalIgnoreCase);
 
     public void Add(SingleMatchOutcome outcome)
@@ -70,6 +75,9 @@ public sealed class BalanceStatisticsAggregator
             _totalHumanPasses += outcome.PassCounts.Human;
             _totalZombiePasses += outcome.PassCounts.Zombie;
             _totalPowerZombiePasses += outcome.PassCounts.PowerZombie;
+            _totalHumanCardPlays += outcome.CardPlayCounts.Human;
+            _totalZombieCardPlays += outcome.CardPlayCounts.Zombie;
+            _totalPowerZombieRoleCardPlays += outcome.CardPlayCounts.PowerZombie;
             _totalHumanPlayersAtStart += outcome.HumanPlayersAtStart;
             _totalZombiePlayersAtStart += outcome.ZombiePlayersAtStart;
             _totalPowerZombiePlayersAtStart += outcome.PowerZombiePlayersAtStart;
@@ -113,6 +121,13 @@ public sealed class BalanceStatisticsAggregator
             }
 
             Increment(_turnDistribution, outcome.Turns);
+            if (outcome.Turns < _minTurns)
+                _minTurns = outcome.Turns;
+            if (outcome.Turns > _maxTurns)
+                _maxTurns = outcome.Turns;
+
+            foreach (var (dayEvent, count) in outcome.DayEventCounts)
+                _dayEventOccurrences[dayEvent] = _dayEventOccurrences.GetValueOrDefault(dayEvent) + count;
 
             if (!outcome.IsStalemate)
             {
@@ -170,6 +185,8 @@ public sealed class BalanceStatisticsAggregator
                 CardPlaysByEffect = new Dictionary<string, int>(_cardPlaysByEffect),
                 DayEventOccurrences = new Dictionary<string, int>(_dayEventOccurrences),
                 TurnDistribution = new Dictionary<int, int>(_turnDistribution),
+                MinTurns = _minTurns == int.MaxValue ? 0 : _minTurns,
+                MaxTurns = _maxTurns,
                 WinRateWhenRolePresentAtStart = _roleWinTrackers.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.MatchesWithRole > 0
@@ -190,6 +207,9 @@ public sealed class BalanceStatisticsAggregator
                 Humans = BuildRoleStats(_totalHumanPasses, totalMatches, totalDays, _totalHumanPlayersAtStart),
                 Zombies = BuildRoleStats(_totalZombiePasses, totalMatches, totalDays, _totalZombiePlayersAtStart),
                 PowerZombies = BuildRoleStats(_totalPowerZombiePasses, totalMatches, totalDays, _totalPowerZombiePlayersAtStart),
+                HumanActions = BuildActionStats(_totalHumanPasses, _totalHumanCardPlays, totalMatches),
+                ZombieActions = BuildActionStats(_totalZombiePasses, _totalZombieCardPlays, totalMatches),
+                PowerZombieActions = BuildActionStats(_totalPowerZombiePasses, _totalPowerZombieRoleCardPlays, totalMatches),
                 Correlation = BuildPassCorrelation(_passCorrelationSamples)
             };
         }
@@ -266,6 +286,19 @@ public sealed class BalanceStatisticsAggregator
             AveragePassesPerMatch = totalMatches > 0 ? Math.Round(totalPasses / (double)totalMatches, 4) : 0,
             AveragePassesPerDay = totalDays > 0 ? Math.Round(totalPasses / (double)totalDays, 4) : 0,
             AveragePassesPerPlayer = totalPlayersAtStart > 0 ? Math.Round(totalPasses / (double)totalPlayersAtStart, 4) : 0
+        };
+    }
+
+    private static RoleActionUsageStats BuildActionStats(long totalPasses, long totalCardPlays, int totalMatches)
+    {
+        var totalActions = totalPasses + totalCardPlays;
+        return new RoleActionUsageStats
+        {
+            TotalPasses = totalPasses,
+            TotalCardPlays = totalCardPlays,
+            AveragePassesPerMatch = totalMatches > 0 ? Math.Round(totalPasses / (double)totalMatches, 4) : 0,
+            AverageCardPlaysPerMatch = totalMatches > 0 ? Math.Round(totalCardPlays / (double)totalMatches, 4) : 0,
+            PassRatePercent = totalActions > 0 ? Math.Round(totalPasses * 100.0 / totalActions, 2) : 0
         };
     }
 

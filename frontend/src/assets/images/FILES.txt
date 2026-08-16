@@ -1,0 +1,56 @@
+راهنمای قرار دادن تصاویر — frontend/src/assets/images/
+=====================================================
+
+ریشه (images/)
+  splash.png              صفحه Splash (390×844 یا 1080×1920)
+
+brand/
+  logo.png                لوگوی اصلی
+  logo-small.png          لوگوی کوچک (Login)
+  favicon.png             32×32
+  app-icon.png            1024×1024
+
+backgrounds/
+  bg-login.webp           پس‌زمینه Login
+  bg-home.webp            بنر Home
+  bg-lobby.webp           لابی
+  bg-battle.webp          نبرد
+  bg-voting.webp          رأی‌گیری
+
+cards/                    سایز پیشنهادی: 200×280
+  card-back.png
+  card-shield.png
+  card-heal.png
+  card-shotgun.png
+  card-visitor.png
+  card-zombie-poison.png
+  card-pass.png
+
+roles/                    سایز پیشنهادی: 280×400
+  role-human.png
+  role-zombie.png
+  role-power-zombie.png
+  role-card-back.png
+
+avatars/                  سایز: 128×128
+  default-01.png … default-08.png
+
+ui/
+  icon-quick-match.png    icon-rooms.png  icon-collection.png
+  icon-matchmaking.png    icon-invite.png icon-vote.png
+  icon-pass.png           icon-play.png
+  coin.png
+  rank-1.png  rank-2.png  rank-3.png
+  empty-queue.png  empty-opponents.png  empty-friends.png
+  frame-gold.png
+
+shop/                     سایز: 200×200
+  pack-survivor.png
+  pack-blood-moon.png
+  pack-golden.png
+
+results/
+  victory.png             defeat.png
+  coins-reward.png        xp-reward.png
+
+نکته: PNG برای شفافیت، WebP برای پس‌زمینه. نام فایل‌ها انگلیسی و lowercase.

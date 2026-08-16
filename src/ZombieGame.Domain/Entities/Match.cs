@@ -8,7 +8,9 @@ public class Match
     public MatchStatus Status { get; set; } = MatchStatus.Waiting;
     public GamePhase CurrentPhase { get; set; } = GamePhase.Lobby;
     public string SessionToken { get; set; } = string.Empty;
+    public string? Name { get; set; }
     public int MaxPlayers { get; set; } = 8;
+    public bool FillWithBots { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }

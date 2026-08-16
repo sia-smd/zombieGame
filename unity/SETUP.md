@@ -1,22 +1,14 @@
 # Unity Setup — ZombieGame Client
 
-## 1. Copy scripts
+پروژه Unity: `unity/My project/`
 
-Copy `unity/Scripts` into your Unity project under `Assets/ZombieGame/Scripts`.
+## 1. Open project
 
-## 2. Install NuGet packages (SignalR)
+Unity Hub → Open → `D:\siavash\zombie\ZombieGame\unity\My project`
 
-Use [NuGetForUnity](https://github.com/GlitchEnzo/NuGetForUnity) or add DLLs manually:
+اسکریپت‌ها و DLLهای SignalR از قبل در `Assets/ZombieGame/` قرار دارند.
 
-| Package | Version (min) |
-|---------|----------------|
-| `Microsoft.AspNetCore.SignalR.Client` | 8.0.x |
-| `Microsoft.AspNetCore.SignalR.Protocols.Json` | 8.0.x |
-| `System.Net.Http.Json` | (included in .NET Standard 2.1 / Unity 2022+) |
-
-After install, Unity should resolve `Microsoft.AspNetCore.SignalR.Client` for `GameHubClient.cs`.
-
-## 3. Player Settings
+## 2. First run in Editor
 
 - **Api Compatibility Level:** .NET Standard 2.1 or .NET Framework 4.x (with compatible packages)
 - For **Android** dev builds against `http://localhost:10.0.2.2:5232` (emulator) enable cleartext HTTP in manifest or use HTTPS.

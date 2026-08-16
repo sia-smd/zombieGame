@@ -35,6 +35,8 @@ public class MatchConfiguration : IEntityTypeConfiguration<Match>
         builder.HasKey(m => m.Id);
         builder.HasIndex(m => m.SessionToken).IsUnique();
         builder.Property(m => m.SessionToken).HasMaxLength(64).IsRequired();
+        builder.Property(m => m.Name).HasMaxLength(40);
+        builder.Property(m => m.FillWithBots).HasDefaultValue(true);
     }
 }
 

@@ -2,7 +2,10 @@ namespace ZombieGame.Application.Common;
 
 public class ServiceException : Exception
 {
-    public ServiceException(string message) : base(message)
+    public string? Code { get; }
+
+    public ServiceException(string message, string? code = null) : base(message)
     {
+        Code = code;
     }
 }

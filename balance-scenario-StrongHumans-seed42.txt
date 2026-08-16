@@ -1,0 +1,155 @@
+﻿══════════════════════════════════════════════════════════
+  گزارش بالانس — شبیه‌سازی انبوه
+══════════════════════════════════════════════════════════
+سناریو: انسان‌های قوی
+ترکیب نقش: 9 انسان / 2 زامبی / 1 PowerZombie
+بازی‌ها: 1,000 | بازیکنان: 12 | زمان: 1.3s (799 بازی/ثانیه)
+Seed: 42
+
+── نتیجه بازی‌ها ──
+  برد انسان‌ها: 0.70% (7 بازی)
+  برد زامبی‌ها: 99.30% (993 بازی)
+  تساوی (سقف روز): 0.00% (0 بازی)
+
+── طول بازی (روز) ──
+  میانگین: 7.98 روز
+  کمترین: 3 روز
+  بیشترین: 28 روز
+
+── میانگین کارت در هر بازی ──
+  کل: 23.14
+  شات‌گان: 1.32
+  مدیکیت: 1.19
+  عفونت: 10.84
+  آلفا زامبی: 1.83
+  سپر: 7.96
+  حذف با رأی: 0.16
+  Friendly fire: 0.41
+
+── درصد PASS (از کل نوبت‌های همان نقش: PASS + بازی کارت) ──
+  انسان: 69.21%  (PASS/بازی: 19.84/8.83)
+  زامبی: 74.25%  (PASS/بازی: 35.99/12.48)
+  PowerZombie: 74.91%  (PASS/بازی: 5.46/1.83)
+
+── عفونت و رأی‌گیری ──
+  نرخ موفقیت عفونت زامبی: 67.16%
+  نرخ موفقیت آلفا زامبی: 100.00%
+  میانگین درمان موفق/بازی: 0.57
+  میانگین عفونت موفق/بازی: 7.28
+  حذف با رأی (کل): 126 | میانگین/بازی: 0.16
+
+── درصد رویداد روز (تمام روزهای بازی‌شده) ──
+  طوفان        34.50%  (2,753 روز)
+  روز عادی     33.02%  (2,635 روز)
+  روز آفتابی   32.48%  (2,592 روز)
+
+── تعداد کارت‌ها (کل همه بازی‌ها) ──
+  عفونت            10,836
+  سپر               7,959
+  آلفا زامبی        1,828
+  شات‌گان           1,324
+  مدیکیت            1,191
+
+══════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════
+  BALANCE REPORT — BULK SIMULATION (ENGLISH)
+══════════════════════════════════════════════════════════
+Scenario: Strong Humans
+Roles: 9 Human / 2 Zombie / 1 PowerZombie
+Games: 1,000 | Players: 12 | Elapsed: 1.3s
+Seed: 42
+
+── Outcomes ──
+  Human Wins: 0.70% (7)
+  Zombie Wins: 99.30% (993)
+  Draw / Stalemate: 0.00% (0)
+
+── Game Length (Days) ──
+  Average: 7.98
+  Min: 3
+  Max: 28
+
+── Average Cards Per Match ──
+  Total: 23.14
+  Shotgun: 1.32
+  Heal: 1.19
+  Infection: 10.84
+  Alpha Zombie: 1.83
+  Shield: 7.96
+  Vote Eliminations: 0.16
+  Friendly Fire: 0.41
+
+── PASS Rate By Role ──
+  Human: 69.21%
+  Zombie: 74.25%
+  PowerZombie: 74.91%
+
+── Infection & Voting ──
+  Zombie Infection Success: 67.16%
+  PowerZombie Infection Success: 100.00%
+  Avg Successful Heals/Match: 0.57
+  Avg Successful Infections/Match: 7.28
+  Vote Eliminations Total: 126
+
+── Day Event Distribution ──
+  Storm        34.50%  (2,753 days)
+  NormalDay    33.02%  (2,635 days)
+  SunnyDay     32.48%  (2,592 days)
+
+── Card Plays (All Matches) ──
+  infect           10,836
+  shield            7,959
+  power_zombie      1,828
+  shoot             1,324
+  heal              1,191
+══════════════════════════════════════════════════════════
+
+
+=== Infection Balance Report ===
+Simulations: 1,000 | Elapsed: 1.25s | 799 matches/s
+
+=== Match Outcomes ===
+  Human Win Rate: 0.70%
+  Zombie Win Rate: 99.30%
+  Stalemate Rate: 0.00%
+  Average Match Length (Days): 7.98
+  Average Card Plays/Match: 23.14
+  Average Vote Eliminations/Match: 0.16
+
+=== Infection Totals (All Matches) ===
+  Successful Zombie Infections: 7,277
+  Blocked Zombie Infections (Shield): 3,559
+  Successful PowerZombie Infections: 1,828
+  Zombie Cures (Heal): 569
+  Humans Converted To Zombies: 9,105
+  Zombies Converted Back To Humans: 569
+
+=== Infection Averages Per Match ===
+  Average Successful Infections: 7.2770
+  Average Failed Infections: 3.5590
+  Average Heals (Zombie Cures): 0.5690
+  Average Human→Zombie Conversions: 9.1050
+  Average Zombie→Human Conversions: 0.5690
+
+=== Effectiveness Rates ===
+  Infection Success Rate: 67.16%
+  PowerZombie Infection Success Rate: 100.00%
+  Heal Effectiveness Rate: 47.77%
+
+=== Infection Transformation (Per Match) ===
+  Infected With Remaining Shield: 3.7090
+  Disabled Shotguns After Infection: 9.9100
+  Disabled Heals After Infection: 4.4320
+
+=== Pass Usage (Per Match) ===
+  Human Passes/Match: 19.8420
+  Zombie Passes/Match: 35.9940
+  PowerZombie Passes/Match: 5.4580
+
+=== Card Plays By Effect (All Matches) ===
+  infect: 10,836
+  shield: 7,959
+  power_zombie: 1,828
+  shoot: 1,324
+  heal: 1,191

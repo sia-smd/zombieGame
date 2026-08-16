@@ -10,7 +10,7 @@ using ZombieGame.Application.Common;
 
 using ZombieGame.Application.DTOs.Game;
 
-using ZombieGame.Application.Bots;
+using ZombieGame.Application.Bots.Cognition;
 
 using ZombieGame.Application.Game;
 
@@ -52,6 +52,8 @@ public class GameService : IGameService
 
     private readonly IGameRulesEngine _rulesEngine;
 
+    private readonly ICardConsumptionService _consumption;
+
     private readonly IUnitOfWork _unitOfWork;
 
     private readonly GameSettings _settings;
@@ -78,6 +80,8 @@ public class GameService : IGameService
 
         IGameRulesEngine rulesEngine,
 
+        ICardConsumptionService consumption,
+
         IUnitOfWork unitOfWork,
 
         IOptions<GameSettings> settings)
@@ -101,6 +105,8 @@ public class GameService : IGameService
         _cardRegistry = cardRegistry;
 
         _rulesEngine = rulesEngine;
+
+        _consumption = consumption;
 
         _unitOfWork = unitOfWork;
 
@@ -152,15 +158,18 @@ public class GameService : IGameService
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
 
+        if (match.Status == MatchStatus.InProgress)
+        {
+            var existingState = await GetRequiredStateAsync(matchId, match, cancellationToken);
+            return new GameActionResult(
+                true,
+                "Game already started.",
+                GameStateMapper.ToDto(existingState, includeHands: true));
+        }
+
         if (match.Status != MatchStatus.Waiting)
 
-            throw new ServiceException("Match has already started.");
-
-
-
-        foreach (var player in match.Players.Where(p => !p.IsBot))
-
-            await _coinService.DeductEntryFeeAsync(player.UserId, matchId, cancellationToken);
+            throw new ServiceException("Cannot start this match.");
 
 
 
@@ -178,7 +187,12 @@ public class GameService : IGameService
 
         _rulesEngine.StartMatch(state, match);
 
-        SuspicionScoring.EnsureInitialized(state);
+        await _coinService.CollectMatchEntryFeesAsync(
+            matchId,
+            state.Players.Where(p => !p.IsBot).Select(p => p.UserId),
+            cancellationToken);
+
+        BotObservationRecorder.InitializeBots(state, Random.Shared);
 
 
 
@@ -234,7 +248,7 @@ public class GameService : IGameService
 
 
 
-        if (!hand.CardIds.Contains(request.CardId))
+        if (!hand.ContainsCard(request.CardId))
 
             throw new ServiceException("Card not in hand.");
 
@@ -246,9 +260,9 @@ public class GameService : IGameService
 
 
 
-        hand.CardIds.Remove(request.CardId);
+        _consumption.ConsumeAfterPlay(hand, card);
 
-        SuspicionScoring.ApplyCardOutcome(state, userId, targetId, effectResult, card.EffectKey);
+        BotObservationRecorder.OnCardOutcome(state, userId, targetId, effectResult, card.EffectKey);
 
         SyncMatchPlayersFromState(match, state);
 
@@ -326,7 +340,7 @@ public class GameService : IGameService
 
         _rulesEngine.PassAction(state, userId);
 
-        SuspicionScoring.RecordPass(state, userId);
+        BotObservationRecorder.OnPass(state, userId);
 
         await PersistSessionAsync(state, cancellationToken);
 
@@ -356,7 +370,7 @@ public class GameService : IGameService
 
         var state = await GetRequiredStateAsync(matchId, match, cancellationToken);
 
-        SuspicionScoring.FinalizeDay(state);
+        BotObservationRecorder.OnDayEnd(state);
 
         _rulesEngine.EndDayPhase(state, _settings);
 
@@ -416,7 +430,7 @@ public class GameService : IGameService
 
             if (state.CurrentPhase == GamePhase.Day)
 
-                SuspicionScoring.ResetDayActivities(state);
+                BotObservationRecorder.OnDayStart(state);
 
             await PersistSessionAsync(state, cancellationToken);
 
@@ -516,7 +530,7 @@ public class GameService : IGameService
 
             if (state.CurrentPhase == GamePhase.Day)
 
-                SuspicionScoring.ResetDayActivities(state);
+                BotObservationRecorder.OnDayStart(state);
 
             await PersistSessionAsync(state, cancellationToken);
 

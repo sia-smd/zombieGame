@@ -8,6 +8,8 @@ public class GameSessionState
     public string SessionToken { get; set; } = string.Empty;
     public GamePhase CurrentPhase { get; set; } = GamePhase.Lobby;
     public int TurnNumber { get; set; }
+    /// <summary>Consecutive days without a vote elimination; drives late-game aggression.</summary>
+    public int DaysSinceLastElimination { get; set; }
     public DateTime? PhaseEndsAt { get; set; }
     public DayEventType CurrentDayEvent { get; set; } = DayEventType.NormalDay;
     public WinTeam WinTeam { get; set; } = WinTeam.None;
@@ -17,6 +19,14 @@ public class GameSessionState
     public Dictionary<Guid, PlayerDayActivity> PlayerDayActivities { get; set; } = new();
     public List<GamePlayerState> Players { get; set; } = new();
     public List<PlayerCardState> PlayerHands { get; set; } = new();
+    public Dictionary<Guid, BotCognitionState> BotCognition { get; set; } = new();
+    public List<StructuredDiscussionMessage> DiscussionMessagesThisDay { get; set; } = [];
+    public List<GlobalDiscussionAnnouncement> DiscussionAnnouncementsThisDay { get; set; } = [];
+    public List<StructuredDiscussionMessage> DiscussionHistory { get; set; } = [];
+    /// <summary>Count of publicly witnessed infection events (no hidden role data).</summary>
+    public int PublicInfectionEventCount { get; set; }
+    public Dictionary<Guid, int> HealsByPlayer { get; set; } = new();
+    public Dictionary<Guid, int> PoisonsByPlayer { get; set; } = new();
     public Dictionary<string, object> Metadata { get; set; } = new();
     public bool IsFinished => WinTeam != WinTeam.None;
 
@@ -56,7 +66,12 @@ public class PlayerDayActivity
 public class PlayerCardState
 {
     public Guid UserId { get; set; }
-    public List<Guid> CardIds { get; set; } = new();
+    /// <summary>Permanent role identity — display only; never played from inventory.</summary>
+    public Guid RoleCardId { get; set; }
+    public Guid? InventorySlot1 { get; set; }
+    public Guid? InventorySlot2 { get; set; }
+    public Guid? InventorySlot3 { get; set; }
+    public Guid? InventorySlot4 { get; set; }
     public HashSet<Guid> DisabledCardIds { get; set; } = new();
 }
 

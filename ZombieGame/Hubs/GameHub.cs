@@ -3,7 +3,6 @@ namespace ZombieGame.Api.Hubs;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using ZombieGame.Application.Common;
 using ZombieGame.Application.DTOs.Game;
 using ZombieGame.Application.Interfaces;
 
@@ -11,8 +10,13 @@ using ZombieGame.Application.Interfaces;
 public class GameHub : Hub
 {
     private readonly IGameService _gameService;
+    private readonly IUserPresenceTracker _presence;
 
-    public GameHub(IGameService gameService) => _gameService = gameService;
+    public GameHub(IGameService gameService, IUserPresenceTracker presence)
+    {
+        _gameService = gameService;
+        _presence = presence;
+    }
 
     public async Task JoinMatch(Guid matchId, string sessionToken)
     {
@@ -64,8 +68,21 @@ public class GameHub : Hub
         await Clients.Caller.SendAsync("SyncState", state);
     }
 
+    public override Task OnConnectedAsync()
+    {
+        var userId = TryGetUserId();
+        if (userId is Guid id)
+            _presence.AddConnection(id, Context.ConnectionId);
+
+        return base.OnConnectedAsync();
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        var userId = TryGetUserId();
+        if (userId is Guid id)
+            _presence.RemoveConnection(id, Context.ConnectionId);
+
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -91,4 +108,10 @@ public class GameHub : Hub
             throw new HubException("Unauthorized");
         return userId;
     }
+
+    private Guid? TryGetUserId() =>
+        Guid.TryParse(Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? Context.User?.FindFirstValue("sub"), out var userId)
+            ? userId
+            : null;
 }

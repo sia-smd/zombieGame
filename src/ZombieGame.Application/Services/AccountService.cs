@@ -22,6 +22,7 @@ public sealed class AccountService : IAccountService
     private readonly ITokenService _tokenService;
     private readonly ISmsService _smsService;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IForbiddenWordsService _forbiddenWords;
     private readonly GameSettings _gameSettings;
     private readonly AccountSettings _accountSettings;
     private readonly ILogger<AccountService> _logger;
@@ -37,6 +38,7 @@ public sealed class AccountService : IAccountService
         ITokenService tokenService,
         ISmsService smsService,
         IPasswordHasher passwordHasher,
+        IForbiddenWordsService forbiddenWords,
         IOptions<GameSettings> gameSettings,
         IOptions<AccountSettings> accountSettings,
         ILogger<AccountService> logger)
@@ -50,6 +52,7 @@ public sealed class AccountService : IAccountService
         _tokenService = tokenService;
         _smsService = smsService;
         _passwordHasher = passwordHasher;
+        _forbiddenWords = forbiddenWords;
         _gameSettings = gameSettings.Value;
         _accountSettings = accountSettings.Value;
         _logger = logger;
@@ -64,7 +67,7 @@ public sealed class AccountService : IAccountService
             throw new ServiceException("DeviceId is required.");
 
         var playerId = Guid.NewGuid();
-        var guestName = await GenerateUniqueGuestNameAsync(cancellationToken);
+        var guestName = await ResolveGuestNameAsync(request.Nickname, cancellationToken);
         var now = DateTime.UtcNow;
 
         var user = new User
@@ -106,6 +109,76 @@ public sealed class AccountService : IAccountService
             new GuestProfileDto(profile.Name, profile.ImageId, profile.Level, user.Coins, user.Wins, user.Losses));
     }
 
+    public async Task<AccountLoginResponse> LoginAsync(
+        AccountLoginRequest request,
+        string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MobileNumberValidator.IsValid(request.PhoneNumber))
+            throw new ServiceException("Invalid phone number or password.");
+        if (string.IsNullOrWhiteSpace(request.Password)
+            || string.IsNullOrWhiteSpace(request.DeviceId)
+            || string.IsNullOrWhiteSpace(request.AppVersion))
+            throw new ServiceException("Phone number, password, device id, and app version are required.");
+
+        var mobile = MobileNumberValidator.Normalize(request.PhoneNumber);
+        var user = await _userRepository.GetByPhoneNumberAsync(mobile, cancellationToken);
+        if (user is null
+            || user.AccountType != AccountType.Mobile
+            || !user.MobileVerified
+            || !_passwordHasher.Verify(request.Password, user.PasswordHash))
+        {
+            if (user is not null)
+            {
+                await LogAsync(
+                    user.Id,
+                    request.DeviceId,
+                    ipAddress,
+                    LoginResult.Failure,
+                    "login_invalid_credentials",
+                    cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            throw new ServiceException("Invalid phone number or password.");
+        }
+
+        var now = DateTime.UtcNow;
+        var device = await GetOrCreateDeviceAsync(
+            user.Id,
+            request.DeviceId,
+            request.Platform,
+            request.AppVersion,
+            now,
+            cancellationToken);
+        var tokens = await CreateSessionAsync(user, device, cancellationToken);
+
+        user.LastLoginAt = now;
+        _userRepository.Update(user);
+        await LogAsync(user.Id, request.DeviceId, ipAddress, LoginResult.Success, "login", cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var hydratedUser = await _userRepository.GetByIdWithProfileAsync(user.Id, cancellationToken) ?? user;
+        var profile = hydratedUser.Profile;
+
+        _logger.LogInformation("Player {PlayerId} logged in on device {DeviceId}", user.Id, request.DeviceId);
+
+        return new AccountLoginResponse(
+            user.Id,
+            user.Username,
+            tokens.AccessToken,
+            tokens.RefreshToken,
+            tokens.AccessExpiresAt,
+            tokens.RefreshExpiresAt,
+            new GuestProfileDto(
+                profile?.Name ?? user.Username,
+                profile?.ImageId ?? _accountSettings.DefaultAvatarId,
+                profile?.Level ?? 1,
+                user.Coins,
+                user.Wins,
+                user.Losses));
+    }
+
     public async Task<AddMobileResponse> AddMobileAsync(
         Guid playerId,
         AddMobileRequest request,
@@ -136,6 +209,74 @@ public sealed class AccountService : IAccountService
         _logger.LogInformation("Mobile linking initiated for player {PlayerId}", playerId);
 
         return new AddMobileResponse(true, true, "Verification code sent.");
+    }
+
+    public async Task<VerifyMobileResponse> VerifyMobileAsync(
+        Guid playerId,
+        VerifyMobileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!MobileNumberValidator.IsValid(request.MobileNumber))
+            throw new ServiceException("Invalid mobile number format.");
+
+        if (string.IsNullOrWhiteSpace(request.Code))
+            throw new ServiceException("Verification code is required.");
+
+        var mobile = MobileNumberValidator.Normalize(request.MobileNumber);
+        var user = await _userRepository.GetByIdAsync(playerId, cancellationToken)
+            ?? throw new ServiceException("Player not found.");
+
+        if (user.PendingPhoneNumber is null || user.PendingPhoneNumber != mobile)
+            throw new ServiceException("No pending mobile verification for this number.");
+
+        if (user.MobileVerificationExpiresAt is null || user.MobileVerificationExpiresAt < DateTime.UtcNow)
+            throw new ServiceException("Verification code has expired.");
+
+        if (user.MobileVerificationCodeHash is null
+            || !_passwordHasher.Verify(request.Code.Trim(), user.MobileVerificationCodeHash))
+            throw new ServiceException("Invalid verification code.");
+
+        user.PhoneNumber = mobile;
+        user.PendingPhoneNumber = null;
+        user.MobileVerified = true;
+        user.MobileVerificationCodeHash = null;
+        user.MobileVerificationExpiresAt = null;
+        user.AccountType = AccountType.Mobile;
+        _userRepository.Update(user);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Mobile verified for player {PlayerId}", playerId);
+
+        return new VerifyMobileResponse(true, "Mobile number linked successfully.");
+    }
+
+    public async Task<ChangePasswordResponse> ChangePasswordAsync(
+        Guid playerId,
+        ChangePasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+            throw new ServiceException("Password must be at least 6 characters.");
+
+        var user = await _userRepository.GetByIdAsync(playerId, cancellationToken)
+            ?? throw new ServiceException("Player not found.");
+
+        if (user.AccountType == AccountType.Mobile)
+        {
+            if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+                throw new ServiceException("Current password is required.");
+
+            if (!_passwordHasher.Verify(request.CurrentPassword, user.PasswordHash))
+                throw new ServiceException("Current password is incorrect.");
+        }
+
+        user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+        _userRepository.Update(user);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Password changed for player {PlayerId}", playerId);
+
+        return new ChangePasswordResponse(true, "Password updated successfully.");
     }
 
     public async Task<RefreshTokenResponse> RefreshTokenAsync(
@@ -288,6 +429,22 @@ public sealed class AccountService : IAccountService
 
         await _deviceRepository.AddAsync(device, cancellationToken);
         return device;
+    }
+
+    private async Task<string> ResolveGuestNameAsync(string? nickname, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(nickname))
+        {
+            var trimmed = nickname.Trim();
+            new ProfileNameValidator(_forbiddenWords, _accountSettings.MaxProfileNameLength).Validate(trimmed);
+
+            if (await _userRepository.ExistsByUsernameAsync(trimmed, cancellationToken))
+                throw new ServiceException("This nickname is already taken.");
+
+            return trimmed;
+        }
+
+        return await GenerateUniqueGuestNameAsync(cancellationToken);
     }
 
     private async Task<string> GenerateUniqueGuestNameAsync(CancellationToken cancellationToken)

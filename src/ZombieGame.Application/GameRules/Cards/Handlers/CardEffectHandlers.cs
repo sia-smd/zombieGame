@@ -3,6 +3,7 @@ namespace ZombieGame.Application.GameRules.Cards.Handlers;
 using ZombieGame.Application.GameRules;
 using ZombieGame.Application.GameRules.Events;
 using ZombieGame.Domain.Enums;
+using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
 
 public abstract class CardEffectHandlerBase : ICardEffectHandler
@@ -13,9 +14,6 @@ public abstract class CardEffectHandlerBase : ICardEffectHandler
 
     public abstract CardEffectResult Apply(CardEffectContext context);
 
-    protected static bool CanTargetInfectedPlayer(GamePlayerState target) =>
-        target.HasRevealedThisDay;
-
     protected static void KillPlayer(GamePlayerState player)
     {
         player.IsAlive = false;
@@ -25,6 +23,19 @@ public abstract class CardEffectHandlerBase : ICardEffectHandler
     {
         player.ShotgunHitCount = 0;
     }
+}
+
+public sealed class HumanRoleHandler : CardEffectHandlerBase
+{
+    public override string EffectKey => "human_role";
+
+    public override bool CanPlay(CardEffectContext context) =>
+        GameCombatRules.CanPlayHumanPresenceAction(context.Actor.Role) &&
+        context.Actor.IsAlive &&
+        context.TargetUserId == context.ActorUserId;
+
+    public override CardEffectResult Apply(CardEffectContext context) =>
+        CardEffectResult.Ok("Visitor action — no combat effect.");
 }
 
 public sealed class ShotgunHandler : CardEffectHandlerBase
@@ -38,17 +49,13 @@ public sealed class ShotgunHandler : CardEffectHandlerBase
     public override bool CanPlay(CardEffectContext context) =>
         context.Actor.Role == PlayerRole.Human &&
         context.Actor.IsAlive &&
-        context.Target.IsAlive &&
-        (!context.Target.IsInfectedTeam || CanTargetInfectedPlayer(context.Target));
+        context.Target.IsAlive;
 
     public override CardEffectResult Apply(CardEffectContext context)
     {
         var target = context.Target;
         var actor = context.Actor;
         var dayEvent = context.State.CurrentDayEvent;
-
-        if (target.IsInfectedTeam && !CanTargetInfectedPlayer(target))
-            return CardEffectResult.Ok("Target has not revealed their role today.");
 
         if (target.HasShield)
         {
@@ -124,39 +131,44 @@ public sealed class HealHandler : CardEffectHandlerBase
     public override bool CanPlay(CardEffectContext context) =>
         context.Actor.Role == PlayerRole.Human &&
         context.Actor.IsAlive &&
-        context.Target.IsAlive &&
-        (context.Target.Role != PlayerRole.Zombie || CanTargetInfectedPlayer(context.Target));
+        context.Target.IsAlive;
 
     public override CardEffectResult Apply(CardEffectContext context)
     {
         var target = context.Target;
 
-        if (target.Role == PlayerRole.Zombie)
-        {
-            if (!CanTargetInfectedPlayer(target))
-                return CardEffectResult.Ok("Target has not revealed their role today.");
-
-            target.Role = PlayerRole.Human;
-            target.RemainingHealth = 1;
-            ResetCombatState(target);
-
-            var hand = context.State.PlayerHands.FirstOrDefault(h => h.UserId == context.TargetUserId);
-            if (hand is not null)
-                _transformation.RevertZombieToHuman(hand);
-
-            return new CardEffectResult
-            {
-                Success = true,
-                Message = "Zombie cured and converted to Human.",
-                RoleChanged = true,
-                TelemetryKind = CardEffectTelemetryKind.ZombieCured
-            };
-        }
-
-        if (target.Role is PlayerRole.PowerZombie or PlayerRole.Human)
+        if (!GameCombatRules.CanHealTarget(target))
             return CardEffectResult.Ok("Heal had no effect on this target.");
 
-        return CardEffectResult.Fail("Invalid heal target.");
+        var newRole = GameCombatRules.GetHealResultRole(target.Role);
+        if (newRole is null)
+            return CardEffectResult.Fail("Invalid heal target.");
+
+        var wasPowerZombie = target.Role == PlayerRole.PowerZombie;
+        target.Role = newRole.Value;
+        target.RemainingHealth = 1;
+        ResetCombatState(target);
+
+        var hand = context.State.PlayerHands.FirstOrDefault(h => h.UserId == context.TargetUserId);
+        if (hand is not null)
+        {
+            if (wasPowerZombie)
+                _transformation.DemotePowerZombieToZombie(hand);
+            else
+                _transformation.RevertZombieToHuman(hand);
+        }
+
+        return new CardEffectResult
+        {
+            Success = true,
+            Message = wasPowerZombie
+                ? "PowerZombie demoted to regular Zombie."
+                : "Zombie cured and converted to Human.",
+            RoleChanged = true,
+            TelemetryKind = wasPowerZombie
+                ? CardEffectTelemetryKind.PowerZombieDemoted
+                : CardEffectTelemetryKind.ZombieCured
+        };
     }
 }
 
@@ -182,9 +194,21 @@ public sealed class ShieldHandler : CardEffectHandlerBase
 public sealed class ZombieInfectionHandler : CardEffectHandlerBase
 {
     private readonly InfectionTransformationService _transformation;
+    private readonly ICardRegistry _cards;
+    private readonly ICardConsumptionService _consumption;
+    private readonly CombatPriorityService _priority;
 
-    public ZombieInfectionHandler(InfectionTransformationService transformation) =>
+    public ZombieInfectionHandler(
+        InfectionTransformationService transformation,
+        ICardRegistry cards,
+        ICardConsumptionService consumption,
+        HealHandler heal)
+    {
         _transformation = transformation;
+        _cards = cards;
+        _consumption = consumption;
+        _priority = new CombatPriorityService(cards, consumption, heal);
+    }
 
     public override string EffectKey => "infect";
 
@@ -197,6 +221,29 @@ public sealed class ZombieInfectionHandler : CardEffectHandlerBase
     public override CardEffectResult Apply(CardEffectContext context)
     {
         var target = context.Target;
+        var targetHand = context.State.PlayerHands.FirstOrDefault(h => h.UserId == context.TargetUserId);
+
+        if (GameCombatRules.InfectionBlockedByShieldPriority(target, targetHand, _cards.GetById))
+        {
+            // Auto-spend the pending shield (same priority model as heal-before-infect).
+            var shieldCard = targetHand!.FindAvailableEffectCard(_cards.GetById, "shield");
+            if (shieldCard is not null)
+            {
+                target.ActionsUsedThisTurn++;
+                _consumption.ConsumeAfterPlay(targetHand, shieldCard);
+            }
+
+            return new CardEffectResult
+            {
+                Success = true,
+                Message = "Infection blocked by defensive priority.",
+                TelemetryKind = CardEffectTelemetryKind.ZombieInfectionBlockedByShield
+            };
+        }
+
+        var healPreempt = _priority.TryHealBeforeInfection(context);
+        if (healPreempt is not null)
+            return healPreempt;
 
         if (target.HasShield)
         {
@@ -226,24 +273,31 @@ public sealed class ZombieInfectionHandler : CardEffectHandlerBase
 
 public sealed class PowerZombieInfectionHandler : CardEffectHandlerBase
 {
-    private readonly bool _shieldBlocksInfection;
+    private readonly IDayEventService _dayEvents;
     private readonly InfectionTransformationService _transformation;
-
-    public PowerZombieInfectionHandler(InfectionTransformationService transformation, bool shieldBlocksInfection)
-    {
-        _transformation = transformation;
-        _shieldBlocksInfection = shieldBlocksInfection;
-    }
+    private readonly ICardRegistry _cards;
+    private readonly ICardConsumptionService _consumption;
+    private readonly CombatPriorityService _priority;
 
     public PowerZombieInfectionHandler(
         InfectionTransformationService transformation,
-        Microsoft.Extensions.Options.IOptions<Options.GameSettings> settings)
-        : this(transformation, settings.Value.ShieldBlocksPowerZombieInfection) { }
+        IDayEventService dayEvents,
+        ICardRegistry cards,
+        ICardConsumptionService consumption,
+        HealHandler heal)
+    {
+        _transformation = transformation;
+        _dayEvents = dayEvents;
+        _cards = cards;
+        _consumption = consumption;
+        _priority = new CombatPriorityService(cards, consumption, heal);
+    }
 
     public override string EffectKey => "power_zombie";
 
     public override bool CanPlay(CardEffectContext context) =>
         context.Actor.Role == PlayerRole.PowerZombie &&
+        GameCombatRules.CanPowerZombieAttack(context.State.CurrentDayEvent) &&
         context.Actor.IsAlive &&
         context.Target.IsAlive &&
         context.Target.Role == PlayerRole.Human;
@@ -251,8 +305,32 @@ public sealed class PowerZombieInfectionHandler : CardEffectHandlerBase
     public override CardEffectResult Apply(CardEffectContext context)
     {
         var target = context.Target;
+        var dayEvent = context.State.CurrentDayEvent;
+        var targetHand = context.State.PlayerHands.FirstOrDefault(h => h.UserId == context.TargetUserId);
 
-        if (_shieldBlocksInfection && target.HasShield)
+        if (GameCombatRules.InfectionBlockedByShieldPriority(target, targetHand, _cards.GetById))
+        {
+            // Auto-spend the pending shield (same priority model as heal-before-infect).
+            var shieldCard = targetHand!.FindAvailableEffectCard(_cards.GetById, "shield");
+            if (shieldCard is not null)
+            {
+                target.ActionsUsedThisTurn++;
+                _consumption.ConsumeAfterPlay(targetHand, shieldCard);
+            }
+
+            return new CardEffectResult
+            {
+                Success = true,
+                Message = "Infection blocked by defensive priority.",
+                TelemetryKind = CardEffectTelemetryKind.ZombieInfectionBlockedByShield
+            };
+        }
+
+        var healPreempt = _priority.TryHealBeforeInfection(context);
+        if (healPreempt is not null)
+            return healPreempt;
+
+        if (_dayEvents.DoesShieldBlockPowerZombieInfection(dayEvent) && target.HasShield)
         {
             target.HasShield = false;
             return new CardEffectResult
@@ -272,9 +350,7 @@ public sealed class PowerZombieInfectionHandler : CardEffectHandlerBase
         return new CardEffectResult
         {
             Success = true,
-            Message = _shieldBlocksInfection
-                ? "Human infected by PowerZombie."
-                : "Human infected by PowerZombie (shield ignored).",
+            Message = "Human infected by PowerZombie.",
             RoleChanged = true,
             TelemetryKind = CardEffectTelemetryKind.PowerZombieInfectionSucceeded,
             InfectionTransform = transform

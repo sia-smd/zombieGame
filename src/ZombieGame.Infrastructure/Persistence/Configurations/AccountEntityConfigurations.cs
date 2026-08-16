@@ -11,6 +11,7 @@ public class PlayerProfileConfiguration : IEntityTypeConfiguration<PlayerProfile
         builder.HasKey(p => p.PlayerId);
         builder.Property(p => p.Name).HasMaxLength(50).IsRequired();
         builder.Property(p => p.ImageId).HasMaxLength(100).IsRequired();
+        builder.Property(p => p.CustomAvatarData).HasMaxLength(512_000);
     }
 }
 
@@ -67,5 +68,26 @@ public class PlayerLoginLogConfiguration : IEntityTypeConfiguration<PlayerLoginL
             .WithMany(u => u.LoginLogs)
             .HasForeignKey(l => l.PlayerId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class AccountRecoveryChallengeConfiguration : IEntityTypeConfiguration<AccountRecoveryChallenge>
+{
+    public void Configure(EntityTypeBuilder<AccountRecoveryChallenge> builder)
+    {
+        builder.HasKey(c => c.Id);
+        builder.Property(c => c.CodeHash).HasMaxLength(500).IsRequired();
+        builder.Property(c => c.Purpose).HasConversion<string>().HasMaxLength(40);
+        builder.HasIndex(c => new { c.GuestPlayerId, c.TargetPlayerId, c.Purpose, c.ConsumedAt });
+
+        builder.HasOne(c => c.Guest)
+            .WithMany()
+            .HasForeignKey(c => c.GuestPlayerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(c => c.Target)
+            .WithMany()
+            .HasForeignKey(c => c.TargetPlayerId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

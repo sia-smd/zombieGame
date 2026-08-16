@@ -22,6 +22,94 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("ZombieGame.Domain.Entities.AccountRecoveryChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("GuestPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid>("TargetPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetPlayerId");
+
+                    b.HasIndex("GuestPlayerId", "TargetPlayerId", "Purpose", "ConsumedAt");
+
+                    b.ToTable("AccountRecoveryChallenges");
+                });
+
+            modelBuilder.Entity("ZombieGame.Domain.Entities.Achievement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StatKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Threshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Tier")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("StatKey", "IsActive");
+
+                    b.ToTable("Achievements");
+                });
+
             modelBuilder.Entity("ZombieGame.Domain.Entities.CardDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -108,11 +196,20 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Property<int>("CurrentPhase")
                         .HasColumnType("int");
 
+                    b.Property<bool>("FillWithBots")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("MaxPlayers")
                         .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
 
                     b.Property<string>("SessionToken")
                         .IsRequired()
@@ -174,6 +271,27 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("MatchPlayers");
+                });
+
+            modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerAchievement", b =>
+                {
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AchievementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("StatValueAtUnlock")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UnlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PlayerId", "AchievementId");
+
+                    b.HasIndex("AchievementId");
+
+                    b.ToTable("PlayerAchievements");
                 });
 
             modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerDevice", b =>
@@ -259,6 +377,10 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("PlayerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("CustomAvatarData")
+                        .HasMaxLength(512000)
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ImageId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -321,6 +443,28 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("PlayerSessions");
+                });
+
+            modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerStat", b =>
+                {
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StatKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("int");
+
+                    b.HasKey("PlayerId", "StatKey");
+
+                    b.HasIndex("StatKey");
+
+                    b.ToTable("PlayerStats");
                 });
 
             modelBuilder.Entity("ZombieGame.Domain.Entities.Transaction", b =>
@@ -429,6 +573,25 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("ZombieGame.Domain.Entities.AccountRecoveryChallenge", b =>
+                {
+                    b.HasOne("ZombieGame.Domain.Entities.User", "Guest")
+                        .WithMany()
+                        .HasForeignKey("GuestPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ZombieGame.Domain.Entities.User", "Target")
+                        .WithMany()
+                        .HasForeignKey("TargetPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Guest");
+
+                    b.Navigation("Target");
+                });
+
             modelBuilder.Entity("ZombieGame.Domain.Entities.GameActionLog", b =>
                 {
                     b.HasOne("ZombieGame.Domain.Entities.Match", "Match")
@@ -465,6 +628,25 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Navigation("Match");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerAchievement", b =>
+                {
+                    b.HasOne("ZombieGame.Domain.Entities.Achievement", "Achievement")
+                        .WithMany()
+                        .HasForeignKey("AchievementId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ZombieGame.Domain.Entities.User", "Player")
+                        .WithMany("Achievements")
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Achievement");
+
+                    b.Navigation("Player");
                 });
 
             modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerDevice", b =>
@@ -518,6 +700,17 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Navigation("Player");
                 });
 
+            modelBuilder.Entity("ZombieGame.Domain.Entities.PlayerStat", b =>
+                {
+                    b.HasOne("ZombieGame.Domain.Entities.User", "Player")
+                        .WithMany("Stats")
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+                });
+
             modelBuilder.Entity("ZombieGame.Domain.Entities.Transaction", b =>
                 {
                     b.HasOne("ZombieGame.Domain.Entities.User", "User")
@@ -543,6 +736,8 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ZombieGame.Domain.Entities.User", b =>
                 {
+                    b.Navigation("Achievements");
+
                     b.Navigation("Devices");
 
                     b.Navigation("GameActionLogs");
@@ -554,6 +749,8 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Navigation("Profile");
 
                     b.Navigation("Sessions");
+
+                    b.Navigation("Stats");
 
                     b.Navigation("Transactions");
                 });

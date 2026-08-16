@@ -41,7 +41,9 @@ namespace ZombieGame.UnityClient.Networking.Models
     public sealed class PlayerCardStateDto
     {
         public Guid UserId { get; set; }
-        public List<Guid> CardIds { get; set; } = new();
+        public Guid RoleCardId { get; set; }
+        public Guid? InventorySlot1 { get; set; }
+        public Guid? InventorySlot2 { get; set; }
         public List<Guid> DisabledCardIds { get; set; } = new();
     }
 

@@ -87,19 +87,21 @@ public class SimulationController : ControllerBase
         return Ok(result);
     }
 
-    [HttpPost("compare-powerzombie-shield-block")]
-    public async Task<ActionResult<PowerZombieShieldBlockComparisonResult>> ComparePowerZombieShieldBlock(
+    [HttpPost("replay")]
+    public async Task<ActionResult<object>> RunDetailedReplay(
         [FromBody] MatchSimulationOptions? options,
         CancellationToken cancellationToken)
     {
         if (!_environment.IsDevelopment())
             return NotFound();
 
-        options ??= new MatchSimulationOptions();
-        if (options.MatchCount is < 1 or > 100_000)
-            return BadRequest(new { message = "MatchCount must be between 1 and 100000." });
+        options ??= new MatchSimulationOptions { PlayerCount = 12, RandomSeed = 42 };
+        options.MatchCount = 1;
+        if (options.PlayerCount is < 2 or > 16)
+            return BadRequest(new { message = "PlayerCount must be between 2 and 16." });
 
-        var result = await _simulationService.RunPowerZombieShieldBlockComparisonAsync(options, cancellationToken);
-        return Ok(result);
+        var replay = await _simulationService.RunDetailedReplayAsync(options, cancellationToken);
+        var text = MatchReplayTextFormatter.Format(replay);
+        return Ok(new { replay, textReport = text });
     }
 }

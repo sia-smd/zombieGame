@@ -8,5 +8,5 @@ public interface IMatchSimulationService
     Task<PassPenaltyComparisonResult> RunPassPenaltyComparisonAsync(MatchSimulationOptions? options = null, CancellationToken cancellationToken = default);
     Task<MaxPassLimitComparisonResult> RunMaxPassLimitComparisonAsync(MatchSimulationOptions? options = null, CancellationToken cancellationToken = default);
     Task<SuspicionVotingComparisonResult> RunSuspicionVotingComparisonAsync(MatchSimulationOptions? options = null, CancellationToken cancellationToken = default);
-    Task<PowerZombieShieldBlockComparisonResult> RunPowerZombieShieldBlockComparisonAsync(MatchSimulationOptions? options = null, CancellationToken cancellationToken = default);
+    Task<DetailedMatchReplay> RunDetailedReplayAsync(MatchSimulationOptions? options = null, CancellationToken cancellationToken = default);
 }

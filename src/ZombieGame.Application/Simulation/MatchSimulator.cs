@@ -1,6 +1,8 @@
 namespace ZombieGame.Application.Simulation;
 
 using ZombieGame.Application.Bots;
+using ZombieGame.Application.Bots.Cognition;
+using ZombieGame.Application.Bots.Discussion;
 using ZombieGame.Application.Common;
 using ZombieGame.Application.GameRules;
 using ZombieGame.Application.GameRules.Cards;
@@ -16,47 +18,39 @@ using Microsoft.Extensions.Options;
 public sealed class MatchSimulator
 {
     private readonly IGameRulesEngine _engine;
+    private readonly ICardDealingService _dealing;
+    private readonly ICardConsumptionService _consumption;
     private readonly SimulationBotBrain _botBrain;
+    private readonly BotDiscussionEngine _discussionEngine = new();
     private readonly ICardRegistry _cardRegistry;
+    private readonly ConfigurableRoleAssignmentService _roleAssignment;
     private readonly GameSettings _settings;
 
-    public MatchSimulator(MatchSimulationOptions defaults)
+    public MatchSimulator(
+        MatchSimulationOptions defaults,
+        DayEventOptions? dayEventOptions = null,
+        GameSettings? gameSettings = null)
     {
-        _settings = new GameSettings
+        _roleAssignment = new ConfigurableRoleAssignmentService
         {
-            InitialHandSize = 3,
-            CardsDealtPerDay = 1,
-            DiscussionPhaseSeconds = 0,
-            VotingPhaseSeconds = 0,
-            ActionsPerTurn = 2,
-            MaxPassActionsPerDay = defaults.MaxPassActionsPerDay,
-            ShieldBlocksPowerZombieInfection = defaults.ShieldBlocksPowerZombieInfection
+            Composition = BalanceScenarioProfiles.GetComposition(defaults.Scenario, defaults.PlayerCount)
         };
+        _settings = CloneSettingsForSimulation(gameSettings, defaults);
 
         _cardRegistry = new InMemoryCardRegistry();
-        var transformation = new InfectionTransformationService(_cardRegistry);
-        var dayEvents = new DayEventService(new IDayEventModifier[]
-        {
-            new NormalDayModifier(),
-            new SunnyDayModifier(),
-            new StormDayModifier()
-        });
-
-        var handlers = new ICardEffectHandler[]
-        {
-            new ShotgunHandler(dayEvents),
-            new HealHandler(transformation),
-            new ShieldHandler(),
-            new ZombieInfectionHandler(transformation),
-            new PowerZombieInfectionHandler(transformation, _settings.ShieldBlocksPowerZombieInfection)
-        };
+        var transformation = GameRulesComposition.CreateTransformationService(_cardRegistry);
+        var dayEvents = GameRulesComposition.CreateDayEventService(dayEventOptions);
+        _consumption = new CardConsumptionService();
+        var handlers = GameRulesComposition.CreateCardHandlers(dayEvents, transformation, _cardRegistry, _consumption);
 
         var cardValidator = new CardPlayValidator();
         _botBrain = new SimulationBotBrain(_cardRegistry, cardValidator);
+        var generator = new InventoryCardGenerator(_cardRegistry, Options.Create(_settings));
+        _dealing = new CardDealingService(generator, Options.Create(_settings));
 
         _engine = new GameRulesEngine(
-            new RoleAssignmentService(),
-            new CardDealingService(_cardRegistry, Options.Create(_settings)),
+            _roleAssignment,
+            _dealing,
             dayEvents,
             new CardEffectResolver(handlers, dayEvents),
             cardValidator,
@@ -66,14 +60,34 @@ public sealed class MatchSimulator
             Options.Create(_settings));
     }
 
-    public async Task<SingleMatchOutcome> RunSingleMatchAsync(MatchSimulationOptions options, Random random)
+    public async Task<SingleMatchOutcome> RunSingleMatchAsync(MatchSimulationOptions options, Random random) =>
+        (await RunSingleMatchCoreAsync(options, random, recorder: null)).Outcome;
+
+    public async Task<DetailedMatchReplay> RunDetailedReplayAsync(MatchSimulationOptions options, Random random)
+    {
+        var (outcome, replay) = await RunSingleMatchCoreAsync(options, random, new MatchReplayRecorder());
+        replay!.Finalize(outcome.Winner, outcome.IsStalemate, outcome.StartingDayEvent);
+        return replay.Report;
+    }
+
+    private async Task<(SingleMatchOutcome Outcome, MatchReplayRecorder? Recorder)> RunSingleMatchCoreAsync(
+        MatchSimulationOptions options,
+        Random random,
+        MatchReplayRecorder? recorder)
     {
         var match = BuildMatch(options.PlayerCount);
         var state = BuildState(match);
         var stats = new MatchRunStats();
+        var nameLookup = state.Players.ToDictionary(p => p.UserId, p => p.Username);
+
+        _roleAssignment.Composition = BalanceScenarioProfiles.GetComposition(options.Scenario, options.PlayerCount);
 
         _engine.StartMatch(state, match);
-        SuspicionScoring.EnsureInitialized(state);
+        BotObservationRecorder.InitializeBots(state, random, options.Scenario);
+
+        recorder?.Init(match.Id, options.PlayerCount, options.RandomSeed);
+        recorder?.RecordRoster(state.Players.Select(p => (p.UserId, p.Username, p.SeatIndex, p.Role)));
+
         stats.VotingCounts.StartingZombies = state.Players.Count(p => p.Role == PlayerRole.Zombie);
         stats.VotingCounts.StartingPowerZombies = state.Players.Count(p => p.Role == PlayerRole.PowerZombie);
         stats.StartingDayEvent = state.CurrentDayEvent;
@@ -85,30 +99,62 @@ public sealed class MatchSimulator
 
         while (!state.IsFinished && state.TurnNumber <= options.MaxTurnsPerMatch)
         {
-            await RunDayPhaseAsync(state, match, options, random, stats);
-            if (state.IsFinished) break;
+            stats.RecordDayEvent(state.CurrentDayEvent);
+
+            var cardsNote = state.TurnNumber == 1
+                ? "Initial inventory: 2 slot(s) filled per player"
+                : "Empty inventory slot(s) replenished at day start";
+
+            recorder?.BeginDay(
+                state.TurnNumber,
+                state.CurrentDayEvent,
+                state.AlivePlayers.Count(),
+                cardsNote);
+            recorder?.RecordStartingHands(BuildHandSnapshots(state));
+
+            await RunRoomDayFlowAsync(state, match, options, random, stats, recorder, nameLookup);
+            if (state.IsFinished)
+            {
+                recorder?.RecordGameEnd($"Game ended after Day {state.TurnNumber} battles — Winner: {state.WinTeam}");
+                break;
+            }
 
             if (state.CurrentPhase == GamePhase.Day)
                 _engine.EndDayPhase(state, _settings);
 
+            if (state.CurrentPhase == GamePhase.Discussion)
+                RunDiscussionPhase(state, random, recorder, nameLookup);
+
             state.PhaseEndsAt = DateTime.UtcNow.AddSeconds(-1);
             _engine.AdvancePhase(state, match, _settings);
 
-            RunVotingPhase(state, options, random, stats);
+            RunVotingPhase(state, options, random, stats, recorder, nameLookup);
             if (state.CurrentPhase == GamePhase.Voting)
                 _engine.TryAdvanceVotingToResolution(state, _settings);
 
             var eliminatedBefore = state.AlivePlayers.Count();
+            var voteSnapshot = state.Votes.ToDictionary(v => v.Key, v => v.Value);
             await _engine.ProcessResolutionAsync(state, match);
             RecordVoteElimination(state, stats);
+            RecordReplayElimination(state, recorder, nameLookup, voteSnapshot);
+
             if (state.AlivePlayers.Count() < eliminatedBefore)
                 stats.VoteEliminations++;
 
-            if (state.IsFinished) break;
+            recorder?.EndDay(BuildPlayerStatuses(state));
+
+            if (state.IsFinished)
+            {
+                recorder?.RecordGameEnd($"Game finished after Day {state.TurnNumber} vote — Winner: {state.WinTeam}");
+                break;
+            }
         }
 
         var stalemate = !state.IsFinished;
-        return new SingleMatchOutcome
+        var finalStatuses = BuildPlayerStatuses(state);
+        recorder?.SetFinalStatuses(finalStatuses);
+
+        var outcome = new SingleMatchOutcome
         {
             Winner = stalemate ? null : state.WinTeam,
             IsStalemate = stalemate,
@@ -126,84 +172,234 @@ public sealed class MatchSimulator
                 Zombie = stats.PassCounts.Zombie,
                 PowerZombie = stats.PassCounts.PowerZombie
             },
+            CardPlayCounts = new RoleCardPlayCounts
+            {
+                Human = stats.CardPlayCounts.Human,
+                Zombie = stats.CardPlayCounts.Zombie,
+                PowerZombie = stats.CardPlayCounts.PowerZombie
+            },
+            DayEventCounts = new Dictionary<string, int>(stats.DayEventCounts, StringComparer.OrdinalIgnoreCase),
             HumanPlayersAtStart = stats.HumanPlayersAtStart,
             ZombiePlayersAtStart = stats.ZombiePlayersAtStart,
             PowerZombiePlayersAtStart = stats.PowerZombiePlayersAtStart,
             InfectionCounts = InfectionTelemetryRecorder.ToImmutable(stats.InfectionCounts),
             VotingCounts = VotingTelemetryRecorder.ToImmutable(stats.VotingCounts)
         };
+
+        return (outcome, recorder);
     }
 
-    private async Task RunDayPhaseAsync(
+    private static List<ReplayPlayerStatus> BuildPlayerStatuses(GameSessionState state) =>
+        state.Players
+            .OrderBy(p => p.SeatIndex)
+            .Select(p => new ReplayPlayerStatus
+            {
+                Name = p.Username,
+                Role = p.Role,
+                IsAlive = p.IsAlive,
+                HandSize = state.PlayerHands.FirstOrDefault(h => h.UserId == p.UserId)?.InventoryCount() ?? 0
+            })
+            .ToList();
+
+    private static void RecordReplayElimination(
+        GameSessionState state,
+        MatchReplayRecorder? recorder,
+        Dictionary<Guid, string> names,
+        Dictionary<Guid, Guid> voteSnapshot)
+    {
+        if (recorder is null)
+            return;
+
+        if (!state.Metadata.TryGetValue("lastEliminated", out var value))
+            return;
+
+        var text = value?.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        if (text == "none")
+        {
+            recorder.RecordElimination(null, null, none: true, BuildVoteCounts(voteSnapshot, names));
+            return;
+        }
+
+        if (!Guid.TryParse(text, out var eliminatedId))
+            return;
+
+        var eliminated = state.Players.FirstOrDefault(p => p.UserId == eliminatedId);
+        var eliminatedName = names.GetValueOrDefault(eliminatedId, eliminatedId.ToString()[..8]);
+        recorder.RecordElimination(eliminatedName, eliminated?.Role, none: false, BuildVoteCounts(voteSnapshot, names));
+    }
+
+    private static Dictionary<string, int> BuildVoteCounts(Dictionary<Guid, Guid> votes, Dictionary<Guid, string> names)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in votes.Where(v => v.Value != Guid.Empty).GroupBy(v => v.Value))
+        {
+            var targetName = names.GetValueOrDefault(group.Key, group.Key.ToString()[..8]);
+            counts[targetName] = group.Count();
+        }
+        return counts;
+    }
+
+    private async Task RunRoomDayFlowAsync(
         GameSessionState state,
         Match match,
         MatchSimulationOptions options,
         Random random,
-        MatchRunStats stats)
+        MatchRunStats stats,
+        MatchReplayRecorder? recorder,
+        Dictionary<Guid, string> names)
     {
-        SuspicionScoring.ResetDayActivities(state);
+        BotObservationRecorder.OnDayStart(state);
 
-        foreach (var bot in state.AlivePlayers.OrderBy(_ => random.Next()).ToList())
+        var alive = state.AlivePlayers.OrderBy(_ => random.Next()).ToList();
+        while (alive.Count >= 2)
         {
-            while (bot.IsAlive && bot.RemainingActions > 0 && state.CurrentPhase == GamePhase.Day && !state.IsFinished)
+            var playerA = alive[0];
+            var playerB = alive[1];
+            alive.RemoveRange(0, 2);
+
+            ResetBattleTurn(playerA);
+            ResetBattleTurn(playerB);
+            recorder?.BeginBattle(playerA.Username, playerB.Username);
+            await RunPrivateBattleAsync(state, match, playerA, playerB, options, random, stats, recorder, names);
+            if (state.IsFinished)
+                return;
+        }
+
+        if (alive.Count == 1)
+            recorder?.RecordUnmatched(alive[0].Username);
+
+        BotObservationRecorder.OnDayEnd(state);
+    }
+
+    private async Task RunPrivateBattleAsync(
+        GameSessionState state,
+        Match match,
+        GamePlayerState playerA,
+        GamePlayerState playerB,
+        MatchSimulationOptions options,
+        Random random,
+        MatchRunStats stats,
+        MatchReplayRecorder? recorder,
+        Dictionary<Guid, string> names)
+    {
+        var witnesses = new[] { playerA.UserId, playerB.UserId };
+        foreach (var bot in new[] { playerA, playerB }.OrderBy(_ => random.Next()))
+        {
+            while (bot.IsAlive && !state.IsFinished && bot.RemainingActions > 0)
             {
-                var play = _botBrain.TryFindCardPlay(state, bot, random);
-                if (play is not null)
+                var opponentId = bot.UserId == playerA.UserId ? playerB.UserId : playerA.UserId;
+                var opponent = state.GetPlayer(opponentId);
+                if (opponent is null || !opponent.IsAlive)
+                    break;
+
+                if (_botBrain.ShouldPassBattle(state, bot, random, opponentId))
                 {
-                    var card = _cardRegistry.GetById(play.CardId);
-                    var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == bot.UserId);
-                    if (card is null || hand is null || !hand.CardIds.Contains(play.CardId)) 
-                    {
-                        if (!TryExecutePass(state, bot, stats, options))
-                            break;
-                        continue;
-                    }
+                    TryPassTurn(state, bot, stats, options, witnesses, recorder);
+                    continue;
+                }
 
-                    try
-                    {
-                        var targetBefore = state.GetPlayer(play.TargetUserId);
-                        var effectResult = _engine.PlayCard(state, bot.UserId, card, play.TargetUserId);
-                        hand.CardIds.Remove(play.CardId);
-                        stats.TotalCardPlays++;
-                        stats.CardPlaysByEffect[card.EffectKey] = stats.CardPlaysByEffect.GetValueOrDefault(card.EffectKey) + 1;
-                        InfectionTelemetryRecorder.Record(
-                            stats.InfectionCounts,
-                            card.EffectKey,
-                            effectResult.TelemetryKind,
-                            effectResult.InfectionTransform);
-                        SuspicionScoring.ApplyCardOutcome(state, bot.UserId, play.TargetUserId, effectResult, card.EffectKey);
+                var play = _botBrain.TryFindCardPlay(state, bot, random, opponentId);
+                var card = play is null ? null : _cardRegistry.GetById(play.CardId);
+                var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == bot.UserId);
+                if (play is null || card is null || hand is null || !hand.ContainsCard(play.CardId))
+                {
+                    TryPassTurn(state, bot, stats, options, witnesses, recorder);
+                    continue;
+                }
 
-                        if (effectResult.TargetKilled && targetBefore?.Role == PlayerRole.PowerZombie)
-                            stats.InfectionCounts.PowerZombieEliminations++;
+                try
+                {
+                    var targetBefore = state.GetPlayer(play.TargetUserId);
+                    var effectResult = _engine.PlayCard(state, bot.UserId, card, play.TargetUserId);
+                    _consumption.ConsumeAfterPlay(hand, card);
 
-                        if (_engine.EvaluateImmediateWin(state) is not null)
-                        {
-                            await _engine.CompleteMatchIfWonAsync(state, match);
-                            return;
-                        }
-                    }
-                    catch
+                    var targetName = names.GetValueOrDefault(play.TargetUserId, play.TargetUserId.ToString()[..8]);
+                    recorder?.RecordBattlePlay(bot.Username, card.Name, targetName, effectResult.Message);
+
+                    stats.TotalCardPlays++;
+                    stats.CardPlaysByEffect[card.EffectKey] = stats.CardPlaysByEffect.GetValueOrDefault(card.EffectKey) + 1;
+                    stats.RecordCardPlay(bot.Role);
+                    InfectionTelemetryRecorder.Record(
+                        stats.InfectionCounts,
+                        card.EffectKey,
+                        effectResult.TelemetryKind,
+                        effectResult.InfectionTransform);
+                    BotObservationRecorder.OnCardOutcome(
+                        state, bot.UserId, play.TargetUserId, effectResult, card.EffectKey, witnesses);
+
+                    if (effectResult.TargetKilled && targetBefore?.Role == PlayerRole.PowerZombie)
+                        stats.InfectionCounts.PowerZombieEliminations++;
+
+                    if (_engine.EvaluateImmediateWin(state) is not null)
                     {
-                        if (!TryExecutePass(state, bot, stats, options))
-                            break;
+                        await _engine.CompleteMatchIfWonAsync(state, match);
+                        return;
                     }
                 }
-                else
+                catch
                 {
-                    if (!TryExecutePass(state, bot, stats, options))
-                        break;
+                    TryPassTurn(state, bot, stats, options, witnesses, recorder);
                 }
             }
         }
+    }
 
-        SuspicionScoring.FinalizeDay(state);
+    private void ResetBattleTurn(GamePlayerState player)
+    {
+        player.ActionsUsedThisTurn = 0;
+        player.ActionsPerTurn = Math.Max(1, _settings.ActionsPerTurn);
+    }
+
+    private void TryPassTurn(
+        GameSessionState state,
+        GamePlayerState bot,
+        MatchRunStats stats,
+        MatchSimulationOptions options,
+        IEnumerable<Guid> witnesses,
+        MatchReplayRecorder? recorder)
+    {
+        try
+        {
+            _engine.PassAction(state, bot.UserId);
+        }
+        catch
+        {
+            bot.ActionsUsedThisTurn = bot.ActionsPerTurn;
+        }
+
+        RecordPass(state, bot, stats, options, witnesses);
+        recorder?.RecordBattlePass(bot.Username);
+    }
+
+    private static GameSettings CloneSettingsForSimulation(GameSettings? source, MatchSimulationOptions defaults)
+    {
+        var settings = source is null
+            ? new GameSettings()
+            : new GameSettings
+            {
+                ActionsPerTurn = source.ActionsPerTurn,
+                MaxPassActionsPerDay = source.MaxPassActionsPerDay,
+                CardDistribution = source.CardDistribution,
+                Inventory = source.Inventory
+            };
+
+        settings.DiscussionPhaseSeconds = 0;
+        settings.VotingPhaseSeconds = 0;
+        settings.ActionsPerTurn = Math.Max(1, settings.ActionsPerTurn);
+        settings.MaxPassActionsPerDay = defaults.MaxPassActionsPerDay;
+        return settings;
     }
 
     private void RunVotingPhase(
         GameSessionState state,
         MatchSimulationOptions options,
         Random random,
-        MatchRunStats stats)
+        MatchRunStats stats,
+        MatchReplayRecorder? recorder,
+        Dictionary<Guid, string> names)
     {
         if (state.CurrentPhase != GamePhase.Voting) return;
 
@@ -214,11 +410,50 @@ public sealed class MatchSimulator
                 var target = _botBrain.DecideVoteTarget(state, bot, random, options.UseSuspicionBasedVoting);
                 _engine.CastVote(state, bot.UserId, target);
                 VotingTelemetryRecorder.RecordVote(stats.VotingCounts, state, bot.UserId, target);
+                recorder?.RecordVote(
+                    bot.Username,
+                    names.GetValueOrDefault(target, target.ToString()[..8]));
             }
             catch
             {
                 // skip invalid vote
             }
+        }
+    }
+
+    private void RunDiscussionPhase(
+        GameSessionState state,
+        Random random,
+        MatchReplayRecorder? recorder,
+        Dictionary<Guid, string> names)
+    {
+        var announcements = DiscussionAnnouncementService.Build(state);
+        DiscussionEventPublisher.PublishAnnouncements(state, announcements);
+        foreach (var announcement in announcements)
+            recorder?.RecordDiscussionAnnouncement(DiscussionMessageFormatter.FormatAnnouncement(announcement));
+
+        var bots = state.AlivePlayers.Where(p => p.IsBot).OrderBy(_ => random.Next()).ToList();
+        foreach (var bot in bots)
+        {
+            if (!_discussionEngine.ShouldSpeak(state, bot.UserId, random))
+                continue;
+
+            var message = _discussionEngine.DecideMessage(state, bot.UserId, random);
+            if (message is null)
+                continue;
+
+            var targetName = message.TargetUserId is Guid tid
+                ? names.GetValueOrDefault(tid, tid.ToString()[..8])
+                : null;
+            var speakerName = names.GetValueOrDefault(bot.UserId, bot.Username);
+
+            DiscussionEventPublisher.Publish(state, message, speakerName, targetName);
+            _discussionEngine.RecordSpoke(state, bot.UserId);
+            recorder?.RecordDiscussion(
+                speakerName,
+                message.MessageType,
+                targetName,
+                DiscussionMessageFormatter.Format(speakerName, message.MessageType, targetName));
         }
     }
 
@@ -237,28 +472,7 @@ public sealed class MatchSimulator
             VotingTelemetryRecorder.RecordElimination(stats.VotingCounts, eliminated);
             if (eliminated.Role == PlayerRole.PowerZombie)
                 stats.InfectionCounts.PowerZombieEliminations++;
-        }
-    }
-
-    private bool TryExecutePass(
-        GameSessionState state,
-        GamePlayerState bot,
-        MatchRunStats stats,
-        MatchSimulationOptions options)
-    {
-        if (_settings.MaxPassActionsPerDay > 0 && bot.PassesUsedThisDay >= _settings.MaxPassActionsPerDay)
-            return false;
-
-        RecordPass(state, bot, stats, options);
-
-        try
-        {
-            _engine.PassAction(state, bot.UserId);
-            return true;
-        }
-        catch (ServiceException ex) when (ex.Message.Contains("Maximum pass actions", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
+            BotObservationRecorder.OnElimination(state, eliminatedId, eliminated.Role);
         }
     }
 
@@ -266,7 +480,8 @@ public sealed class MatchSimulator
         GameSessionState state,
         GamePlayerState bot,
         MatchRunStats stats,
-        MatchSimulationOptions options)
+        MatchSimulationOptions options,
+        IEnumerable<Guid>? witnesses = null)
     {
         switch (bot.Role)
         {
@@ -284,8 +499,29 @@ public sealed class MatchSimulator
         if (options.PassPenaltyMode)
             bot.InactiveForNextDealing = true;
 
-        SuspicionScoring.RecordPass(state, bot.UserId);
+        BotObservationRecorder.OnPass(state, bot.UserId, witnesses);
     }
+
+    private IEnumerable<ReplayPlayerHandSnapshot> BuildHandSnapshots(GameSessionState state) =>
+        state.Players
+            .OrderBy(p => p.SeatIndex)
+            .Select(p =>
+            {
+                var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == p.UserId);
+                string? NameFor(Guid? id) =>
+                    id is null ? null : _cardRegistry.GetById(id.Value)?.Name ?? id.Value.ToString()[..8];
+
+                return new ReplayPlayerHandSnapshot
+                {
+                    Name = p.Username,
+                    SeatIndex = p.SeatIndex,
+                    Role = p.Role,
+                    IsAlive = p.IsAlive,
+                    RoleCard = hand is null ? null : NameFor(hand.RoleCardId),
+                    InventorySlot1 = hand is null ? null : NameFor(hand.InventorySlot1),
+                    InventorySlot2 = hand is null ? null : NameFor(hand.InventorySlot2)
+                };
+            });
 
     private static Match BuildMatch(int playerCount)
     {
@@ -313,10 +549,11 @@ public sealed class MatchSimulator
 
     private static GameSessionState BuildState(Match match)
     {
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var players = match.Players.OrderBy(p => p.SeatIndex).Select((p, i) => new GamePlayerState
         {
             UserId = p.UserId,
-            Username = $"Bot_{i}",
+            Username = BotNameCatalog.NextUnique(reserved, Random.Shared),
             IsBot = true,
             SeatIndex = i,
             IsAlive = true,
@@ -342,9 +579,40 @@ public sealed class MatchSimulator
         public int VoteEliminations { get; set; }
         public int TotalCardPlays { get; set; }
         public MutableRolePassCounts PassCounts { get; } = new();
+        public MutableRoleCardPlayCounts CardPlayCounts { get; } = new();
+        public Dictionary<string, int> DayEventCounts { get; } = new(StringComparer.OrdinalIgnoreCase);
         public MutableInfectionMatchCounts InfectionCounts { get; } = new();
         public MutableVotingMatchCounts VotingCounts { get; } = new();
         public Dictionary<string, int> CardPlaysByEffect { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public void RecordDayEvent(DayEventType dayEvent)
+        {
+            var key = dayEvent.ToString();
+            DayEventCounts[key] = DayEventCounts.GetValueOrDefault(key) + 1;
+        }
+
+        public void RecordCardPlay(PlayerRole role)
+        {
+            switch (role)
+            {
+                case PlayerRole.Human:
+                    CardPlayCounts.Human++;
+                    break;
+                case PlayerRole.Zombie:
+                    CardPlayCounts.Zombie++;
+                    break;
+                case PlayerRole.PowerZombie:
+                    CardPlayCounts.PowerZombie++;
+                    break;
+            }
+        }
+    }
+
+    private sealed class MutableRoleCardPlayCounts
+    {
+        public int Human { get; set; }
+        public int Zombie { get; set; }
+        public int PowerZombie { get; set; }
     }
 
     private sealed class MutableRolePassCounts

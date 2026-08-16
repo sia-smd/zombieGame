@@ -16,19 +16,28 @@ public sealed class MatchCompletionService : IMatchCompletionService
     private readonly ICoinService _coinService;
     private readonly IMatchRepository _matchRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IPlayerProgressService? _playerProgress;
 
     public MatchCompletionService(
         ICoinService coinService,
         IMatchRepository matchRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IPlayerProgressService? playerProgress = null)
     {
         _coinService = coinService;
         _matchRepository = matchRepository;
         _unitOfWork = unitOfWork;
+        _playerProgress = playerProgress;
     }
 
     public async Task CompleteMatchAsync(Match match, GameSessionState state, WinTeam winningTeam, CancellationToken cancellationToken = default)
     {
+        if (match.Status == MatchStatus.Finished)
+            return;
+
+        if (winningTeam == WinTeam.None)
+            throw new InvalidOperationException("A match cannot be completed without a winner.");
+
         state.WinTeam = winningTeam;
         state.CurrentPhase = GamePhase.Resolution;
 
@@ -53,6 +62,9 @@ public sealed class MatchCompletionService : IMatchCompletionService
             else
                 await _coinService.RecordLossAsync(sessionPlayer.UserId, cancellationToken);
         }
+
+        if (_playerProgress is not null)
+            await _playerProgress.ApplyMatchDeltasAsync(state, winningTeam, cancellationToken);
 
         _matchRepository.Update(match);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -29,7 +29,9 @@ public sealed class AvatarCatalogService : IAvatarCatalogService
     public AvatarCatalogService(IOptions<AccountSettings> settings) =>
         _allowed = settings.Value.AllowedAvatarIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    public bool IsAllowed(string imageId) => _allowed.Contains(imageId);
+    public bool IsAllowed(string imageId) =>
+        string.Equals(imageId, PlayerProfileService.CustomAvatarId, StringComparison.OrdinalIgnoreCase)
+        || _allowed.Contains(imageId);
 
     public IReadOnlyList<string> GetAllowedAvatarIds() => _allowed.ToList();
 }
@@ -47,14 +49,3 @@ public sealed class MockSmsService : ISmsService
     }
 }
 
-public sealed class AccountRecoveryService : IAccountRecoveryService
-{
-    public Task<bool> CanRecoverByMobileAsync(string mobileNumber, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
-
-    public Task<bool> CanLinkGoogleAccountAsync(string googleSubjectId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
-
-    public Task<bool> CanLinkAppleAccountAsync(string appleSubjectId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
-}
