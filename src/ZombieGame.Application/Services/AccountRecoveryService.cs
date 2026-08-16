@@ -6,6 +6,7 @@ using ZombieGame.Application.Common;
 using ZombieGame.Application.DTOs.Account;
 using ZombieGame.Application.Interfaces;
 using ZombieGame.Application.Options;
+using ZombieGame.Application.Validation;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Interfaces;
@@ -62,8 +63,20 @@ public sealed class AccountRecoveryService : IAccountRecoveryService
         if (string.IsNullOrWhiteSpace(mobileNumber))
             return false;
 
-        var user = await _userRepository.GetByPhoneNumberAsync(mobileNumber.Trim(), cancellationToken);
+        var user = await FindByMobileAsync(mobileNumber, cancellationToken);
         return user is { AccountType: AccountType.Mobile, MobileVerified: true, PhoneNumber: not null };
+    }
+
+    private async Task<User?> FindByMobileAsync(string mobileNumber, CancellationToken cancellationToken)
+    {
+        foreach (var key in MobileNumberValidator.LookupKeys(mobileNumber))
+        {
+            var found = await _userRepository.GetByPhoneNumberAsync(key, cancellationToken);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
     }
 
     public Task<bool> CanLinkGoogleAccountAsync(string googleSubjectId, CancellationToken cancellationToken = default) =>

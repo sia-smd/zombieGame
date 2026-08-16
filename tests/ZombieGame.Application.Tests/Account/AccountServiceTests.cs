@@ -66,7 +66,7 @@ public class AccountServiceTests
 
         Assert.True(response.Success);
         Assert.True(response.VerificationRequired);
-        Assert.Equal("+989121234567", users.Users[0].PendingPhoneNumber);
+        Assert.Equal("09121234567", users.Users[0].PendingPhoneNumber);
         Assert.False(users.Users[0].MobileVerified);
     }
 

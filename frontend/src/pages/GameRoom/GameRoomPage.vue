@@ -63,6 +63,9 @@ const invitableIds = computed(() => room.invitableIds(myId.value))
 
 const { secondsLeft: phaseSecondsLeft, clock: phaseClock } = useCountdown(
   () => room.state?.phaseEndsAt,
+  true,
+  () => room.state?.phaseSecondsRemaining,
+  () => room.snapshotReceivedAt,
 )
 
 const canFindOpponent = computed(
@@ -291,6 +294,8 @@ async function sendChat(text: string) {
       :title="t('phaseDialog.battlePrepTitle')"
       :subtitle="t('phaseDialog.battlePrepHint')"
       :ends-at="room.state?.phaseEndsAt"
+      :remaining-seconds="room.state?.phaseSecondsRemaining"
+      :remaining-synced-at="room.snapshotReceivedAt"
     />
     <PhaseCountdownDialog
       :open="showDayStartDialog"
@@ -299,6 +304,8 @@ async function sendChat(text: string) {
       :image-src="dayEventImage"
       :image-fallback-src="dayEventFallbackImage"
       :ends-at="room.state?.phaseEndsAt"
+      :remaining-seconds="room.state?.phaseSecondsRemaining"
+      :remaining-synced-at="room.snapshotReceivedAt"
     />
   </MobileFrame>
 </template>

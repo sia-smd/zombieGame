@@ -20,9 +20,17 @@ export function useGsapFade(target: () => HTMLElement | null, delay = 0) {
   })
 }
 
+export function parseServerInstant(iso: string): number {
+  const value = iso.trim()
+  const hasZone = /Z$|[+-]\d{2}:\d{2}$/.test(value)
+  return new Date(hasZone ? value : `${value}Z`).getTime()
+}
+
 export function useCountdown(
   endsAt: MaybeRefOrGetter<string | null | undefined>,
   active: MaybeRefOrGetter<boolean> = true,
+  remainingSeconds: MaybeRefOrGetter<number | null | undefined> = null,
+  remainingSyncedAt: MaybeRefOrGetter<number | null | undefined> = null,
 ) {
   const nowMs = ref(Date.now())
   let timer: ReturnType<typeof setInterval> | null = null
@@ -33,9 +41,14 @@ export function useCountdown(
 
   const secondsLeft = computed<number | null>(() => {
     if (!toValue(active)) return null
+    const serverSeconds = toValue(remainingSeconds)
+    const syncedAt = toValue(remainingSyncedAt)
+    if (typeof serverSeconds === 'number' && typeof syncedAt === 'number' && syncedAt > 0) {
+      return Math.max(0, Math.ceil(serverSeconds - (nowMs.value - syncedAt) / 1000))
+    }
     const end = toValue(endsAt)
     if (!end) return null
-    const endMs = new Date(end).getTime()
+    const endMs = parseServerInstant(end)
     if (!Number.isFinite(endMs)) return null
     return Math.max(0, Math.ceil((endMs - nowMs.value) / 1000))
   })
@@ -44,7 +57,16 @@ export function useCountdown(
     return seconds === null ? '--:--' : formatTimer(seconds)
   })
 
-  watch([() => toValue(endsAt), () => toValue(active)], tick, { immediate: true })
+  watch(
+    [
+      () => toValue(endsAt),
+      () => toValue(active),
+      () => toValue(remainingSeconds),
+      () => toValue(remainingSyncedAt),
+    ],
+    tick,
+    { immediate: true },
+  )
 
   onMounted(() => {
     tick()

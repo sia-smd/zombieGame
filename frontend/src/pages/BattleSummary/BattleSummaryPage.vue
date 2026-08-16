@@ -25,7 +25,12 @@ const isDaySummary = computed(() => room.currentPhase === RoomPhase.DaySummary)
 const summaries = computed(() => room.battleSummaries)
 const daySummary = computed(() => room.daySummary)
 
-const { clock } = useCountdown(() => room.state?.phaseEndsAt)
+const { clock } = useCountdown(
+  () => room.state?.phaseEndsAt,
+  true,
+  () => room.state?.phaseSecondsRemaining,
+  () => room.snapshotReceivedAt,
+)
 
 const nextPhaseLabel = computed(() => t('phases.room.discussion'))
 

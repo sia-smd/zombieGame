@@ -25,10 +25,9 @@ public sealed class BattlePreparationPhaseHandler : IRoomPhaseHandler
     public async Task<RoomTransitionResult> OnEnterAsync(RoomContext context, CancellationToken cancellationToken = default)
     {
         var room = context.Room;
+        room.PhaseEndsAt = DateTime.UtcNow.AddSeconds(context.Settings.BattlePreparationSeconds);
         AssignRestingPlayers(room);
         await EnsureBattlesExistAsync(room, context.Settings.CardBattleSeconds, cancellationToken);
-
-        room.PhaseEndsAt = DateTime.UtcNow.AddSeconds(context.Settings.BattlePreparationSeconds);
         return RoomTransitionResult.Stay(
             "Preparing battles...",
             new PhaseChangedEvent(RoomPhase.BattlePreparation, "Preparing Battles..."));

@@ -380,7 +380,7 @@
     "name": "Name",
     "username": "Username",
     "mobile": "Mobile",
-    "mobilePlaceholder": "+98 912...",
+    "mobilePlaceholder": "09123456789",
     "password": "Password",
     "passwordPlaceholder": "New password",
     "currentPassword": "Current password",

@@ -30,7 +30,8 @@ public record RoomStateDto(
     Guid? LastEliminatedPlayerId = null,
     WinTeam WinTeam = WinTeam.None,
     RoomMood RoomMood = RoomMood.Safe,
-    int SnapshotVersion = 0);
+    int SnapshotVersion = 0,
+    int PhaseSecondsRemaining = 0);
 
 /// <summary>
 /// The viewer's own private battle data (hand, health, actions). Only ever populated on
@@ -148,7 +149,7 @@ public static class RoomStateMapper
             room.MatchId,
             room.CurrentPhase,
             room.DayNumber,
-            room.PhaseEndsAt,
+            ToUtc(room.PhaseEndsAt),
             room.Players.Select(p => new RoomPlayerDto(
                 p.UserId,
                 p.Username,
@@ -199,7 +200,27 @@ public static class RoomStateMapper
             room.LastEliminatedPlayerId,
             room.WinTeam,
             ComputeRoomMood(room),
-            room.SnapshotVersion);
+            room.SnapshotVersion,
+            SecondsRemaining(room.PhaseEndsAt));
+    }
+
+    internal static DateTime? ToUtc(DateTime? value)
+    {
+        if (value is null)
+            return null;
+        var utc = value.Value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            : value.Value.ToUniversalTime();
+        return DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+    }
+
+    internal static int SecondsRemaining(DateTime? endsAt)
+    {
+        if (endsAt is null)
+            return 0;
+
+        var utc = ToUtc(endsAt)!.Value;
+        return (int)Math.Max(0, Math.Ceiling((utc - DateTime.UtcNow).TotalSeconds));
     }
 
     /// <summary>

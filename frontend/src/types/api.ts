@@ -263,6 +263,7 @@ export interface RoomStateDto {
   winTeam?: WinTeam
   roomMood?: RoomMood
   snapshotVersion?: number
+  phaseSecondsRemaining?: number
 }
 
 export interface BattleSummaryDto {

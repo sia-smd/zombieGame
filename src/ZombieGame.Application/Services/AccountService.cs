@@ -122,7 +122,7 @@ public sealed class AccountService : IAccountService
             throw new ServiceException("Phone number, password, device id, and app version are required.");
 
         var mobile = MobileNumberValidator.Normalize(request.PhoneNumber);
-        var user = await _userRepository.GetByPhoneNumberAsync(mobile, cancellationToken);
+        var user = await FindByMobileAsync(mobile, cancellationToken);
         if (user is null
             || user.AccountType != AccountType.Mobile
             || !user.MobileVerified
@@ -191,10 +191,12 @@ public sealed class AccountService : IAccountService
         var user = await _userRepository.GetByIdAsync(playerId, cancellationToken)
             ?? throw new ServiceException("Player not found.");
 
-        if (user.AccountType == AccountType.Mobile && user.MobileVerified && user.PhoneNumber == mobile)
+        if (user.AccountType == AccountType.Mobile && user.MobileVerified
+            && user.PhoneNumber is not null
+            && MobileNumberValidator.Normalize(user.PhoneNumber) == mobile)
             return new AddMobileResponse(true, false, "Mobile number is already linked.");
 
-        if (await _userRepository.ExistsByPhoneNumberAsync(mobile, cancellationToken))
+        if (await IsMobileTakenByOtherAsync(mobile, user.Id, cancellationToken))
             throw new ServiceException("Mobile number is already registered to another account.");
 
         var code = GenerateVerificationCode();
@@ -226,7 +228,8 @@ public sealed class AccountService : IAccountService
         var user = await _userRepository.GetByIdAsync(playerId, cancellationToken)
             ?? throw new ServiceException("Player not found.");
 
-        if (user.PendingPhoneNumber is null || user.PendingPhoneNumber != mobile)
+        if (user.PendingPhoneNumber is null
+            || MobileNumberValidator.Normalize(user.PendingPhoneNumber) != mobile)
             throw new ServiceException("No pending mobile verification for this number.");
 
         if (user.MobileVerificationExpiresAt is null || user.MobileVerificationExpiresAt < DateTime.UtcNow)
@@ -463,6 +466,24 @@ public sealed class AccountService : IAccountService
     {
         var max = (int)Math.Pow(10, _accountSettings.MobileVerificationCodeLength);
         return _random.Next(max / 10, max).ToString();
+    }
+
+    private async Task<User?> FindByMobileAsync(string mobileNumber, CancellationToken cancellationToken)
+    {
+        foreach (var key in MobileNumberValidator.LookupKeys(mobileNumber))
+        {
+            var found = await _userRepository.GetByPhoneNumberAsync(key, cancellationToken);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
+    }
+
+    private async Task<bool> IsMobileTakenByOtherAsync(string mobileNumber, Guid userId, CancellationToken cancellationToken)
+    {
+        var found = await FindByMobileAsync(mobileNumber, cancellationToken);
+        return found is not null && found.Id != userId;
     }
 
     private Task LogAsync(

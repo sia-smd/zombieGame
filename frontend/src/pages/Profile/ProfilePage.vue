@@ -24,6 +24,7 @@ import { profileService, type AchievementProgress } from '@/services/profile.ser
 import { resolveAvatarUrl } from '@/utils/avatarAssets'
 import { useLocaleFormat } from '@/composables/useGameLabels'
 import { images } from '@/assets/images'
+import { formatIranMobile } from '@/utils/mobile'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -88,7 +89,7 @@ function syncFromProfile() {
   if (!p) return
   name.value = p.name
   username.value = p.username
-  mobile.value = p.phoneNumber ?? p.pendingPhoneNumber ?? ''
+  mobile.value = formatIranMobile(p.phoneNumber ?? p.pendingPhoneNumber ?? '')
   pendingMobile.value = !!p.pendingPhoneNumber && !p.mobileVerified
 }
 
@@ -129,7 +130,8 @@ async function saveUsername() {
 
 async function saveMobile() {
   try {
-    const res = await profileService.addMobile(mobile.value.trim())
+    const number = formatIranMobile(mobile.value)
+    const res = await profileService.addMobile(number)
     if (res.verificationRequired) {
       pendingMobile.value = true
       settings.pushToast('info', t('profileEdit.codeSent'))
@@ -145,7 +147,7 @@ async function saveMobile() {
 
 async function verifyMobile() {
   try {
-    await profileService.verifyMobile(mobile.value.trim(), verifyCode.value.trim())
+    await profileService.verifyMobile(formatIranMobile(mobile.value), verifyCode.value.trim())
     pendingMobile.value = false
     verifyCode.value = ''
     await auth.loadProfile()
@@ -182,8 +184,8 @@ async function saveAll() {
       )
     }
     if (pendingMobile.value && verifyCode.value) {
-      await profileService.verifyMobile(mobile.value.trim(), verifyCode.value.trim())
-    } else if (mobile.value.trim() && mobile.value !== auth.profile?.phoneNumber) {
+      await profileService.verifyMobile(formatIranMobile(mobile.value), verifyCode.value.trim())
+    } else if (formatIranMobile(mobile.value) && formatIranMobile(mobile.value) !== formatIranMobile(auth.profile?.phoneNumber ?? '')) {
       await saveMobile()
     }
     await auth.loadProfile()
@@ -285,7 +287,14 @@ async function saveAll() {
             <section class="space-y-0.5 text-start">
               <label class="text-sm font-semibold text-white">{{ t('profileEdit.mobile') }}</label>
               <div class="profile-field profile-field--action" :style="{ backgroundImage: `url(${images.ui.inputFrameBig})` }">
-                <input v-model="mobile" type="tel" class="profile-input" :placeholder="t('profileEdit.mobilePlaceholder')" />
+                <input
+                  v-model="mobile"
+                  type="tel"
+                  inputmode="numeric"
+                  maxlength="11"
+                  class="profile-input"
+                  :placeholder="t('profileEdit.mobilePlaceholder')"
+                />
                 <button type="button" class="profile-save-icon" :aria-label="t('common.save')" @click="saveMobile">
                   <DocumentCheckIcon class="h-5 w-5" />
                 </button>

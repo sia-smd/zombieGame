@@ -9,9 +9,16 @@ const props = defineProps<{
   imageSrc?: string
   imageFallbackSrc?: string
   endsAt?: string | null
+  remainingSeconds?: number | null
+  remainingSyncedAt?: number | null
 }>()
 
-const { secondsLeft } = useCountdown(() => props.endsAt, () => props.open)
+const { secondsLeft } = useCountdown(
+  () => props.endsAt,
+  () => props.open,
+  () => props.remainingSeconds,
+  () => props.remainingSyncedAt,
+)
 
 function onImageError(event: Event) {
   const img = event.target as HTMLImageElement

@@ -69,7 +69,12 @@ const resultPlayers = computed(() => {
     .sort((a, b) => voteCountFor(b.userId) - voteCountFor(a.userId) || a.seatIndex - b.seatIndex)
 })
 
-const { clock } = useCountdown(() => room.state?.phaseEndsAt)
+const { clock } = useCountdown(
+  () => room.state?.phaseEndsAt,
+  true,
+  () => room.state?.phaseSecondsRemaining,
+  () => room.snapshotReceivedAt,
+)
 
 const candidates = computed(() =>
   alivePlayers.value.filter((p) => !sameUserId(p.userId, myId.value)),

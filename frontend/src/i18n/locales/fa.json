@@ -381,7 +381,7 @@
     "name": "نام",
     "username": "نام کاربری",
     "mobile": "شماره موبایل",
-    "mobilePlaceholder": "+98 912...",
+    "mobilePlaceholder": "09123456789",
     "password": "رمز عبور",
     "passwordPlaceholder": "رمز جدید",
     "currentPassword": "رمز فعلی",

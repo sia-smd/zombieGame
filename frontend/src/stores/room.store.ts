@@ -43,6 +43,7 @@ export const useRoomStore = defineStore('room', () => {
   // so it is kept apart from `state` to survive those null-me updates.
   const myBattle = ref<RoomMeDto | null>(null)
   const winTeam = ref<WinTeam>(WinTeam.None)
+  const snapshotReceivedAt = ref(0)
   const lastSyncError = ref<string | null>(null)
 
   const players = computed(() => state.value?.players ?? [])
@@ -144,6 +145,7 @@ export const useRoomStore = defineStore('room', () => {
     }
 
     state.value = next
+    snapshotReceivedAt.value = Date.now()
     matchId.value = next.matchId
     if (next.me) myBattle.value = next.me
     if (typeof next.winTeam === 'number' && next.winTeam !== WinTeam.None) {
@@ -297,6 +299,7 @@ export const useRoomStore = defineStore('room', () => {
     myBattle.value = null
     winTeam.value = WinTeam.None
     lastSyncError.value = null
+    snapshotReceivedAt.value = 0
     recoveryPromise = null
   }
 
@@ -310,6 +313,7 @@ export const useRoomStore = defineStore('room', () => {
     myBattle,
     winTeam,
     lastSyncError,
+    snapshotReceivedAt,
     players,
     alivePlayers,
     currentPhase,

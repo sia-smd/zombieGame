@@ -104,7 +104,12 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
   const myAvatar = computed(() => resolveAvatarUrl(auth.profile) ?? playerAvatarUrl())
   const opponentAvatar = computed(() => playerAvatarUrl(opponentPlayer.value?.imageId))
 
-  const { clock } = useCountdown(() => room.state?.phaseEndsAt)
+  const { clock } = useCountdown(
+    () => room.state?.phaseEndsAt,
+    true,
+    () => room.state?.phaseSecondsRemaining,
+    () => room.snapshotReceivedAt,
+  )
 
   const serverPlayed = computed(() => me.value?.playedCardIds ?? [])
   const opponentRevealedCards = computed(() => me.value?.opponentPlayedCardIds ?? [])

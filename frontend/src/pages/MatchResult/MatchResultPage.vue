@@ -117,8 +117,6 @@ onMounted(async () => {
   }
 })
 
-})
-
 function goHome() {
   auth.clearMatchSession(props.id)
   void auth.loadProfile()
