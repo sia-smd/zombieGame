@@ -95,6 +95,8 @@ Leave empty to talk to the **same origin** (`/api` and `/hubs` on `zombie.com`).
 
 Publish the API project (`dotnet publish ZombieGame/ZombieGame.csproj -c Release`). The Vue `dist` is copied into `wwwroot`. Point the IIS site at that publish folder, bind `zombie.com`, and enable WebSocket. Vue routes fall back to `index.html`; `/api` and `/hubs` stay on the backend.
 
+The production build is a **PWA** (installable, offline shell). API and SignalR (`/api`, `/hubs`) are never cached. HTTPS is required for install prompts.
+
 Skip the frontend build with `/p:SkipFrontendBuild=true` if you only need the API.
 
 ## Mobile-first layout

@@ -517,6 +517,9 @@ sealed class NoOpPresenter : IRoomStatePresenter
         throw new NotImplementedException();
 
     public Task BroadcastAsync(RoomState room, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task PushPrivateToPairAsync(RoomState room, Guid pairId, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }
 
 sealed class NoOpUserRepository : IUserRepository

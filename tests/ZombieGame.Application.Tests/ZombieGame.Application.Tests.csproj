@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZombieGame.Application\ZombieGame.Application.csproj" />
     <ProjectReference Include="..\..\src\ZombieGame.Domain\ZombieGame.Domain.csproj" />
+    <ProjectReference Include="..\..\src\ZombieGame.Infrastructure\ZombieGame.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

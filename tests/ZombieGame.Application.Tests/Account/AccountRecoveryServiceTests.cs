@@ -112,6 +112,34 @@ public class AccountRecoveryServiceTests
     }
 
     [Fact]
+    public async Task VerifyOtp_AcceptsMasterCode1234()
+    {
+        var fixture = CreateFixture();
+        fixture.Users.Users.Add(Guest());
+        fixture.Users.Users.Add(MobileAccount());
+
+        await fixture.Service.SendRecoverAccountOtpAsync(
+            fixture.GuestId,
+            new RecoverAccountSendRequest("Survivor", "secret"),
+            "127.0.0.1");
+
+        var response = await fixture.Service.VerifyRecoverAccountOtpAsync(
+            fixture.GuestId,
+            null,
+            new RecoverAccountVerifyRequest(
+                "Survivor",
+                "secret",
+                "1234",
+                "device-web",
+                DevicePlatform.Android,
+                "1.0.0"),
+            "127.0.0.1");
+
+        Assert.Equal(fixture.TargetId, response.PlayerId);
+        Assert.NotNull(fixture.Challenges.Items[0].ConsumedAt);
+    }
+
+    [Fact]
     public async Task VerifyOtp_RejectsCodeFromDifferentGuest()
     {
         var fixture = CreateFixture();

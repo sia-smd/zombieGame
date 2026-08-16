@@ -10,8 +10,13 @@ using ZombieGame.Domain.Models.Room;
 public sealed class CardBattlePhaseHandler : IRoomPhaseHandler
 {
     private readonly IBattleService _battles;
+    private readonly IRoomStatePresenter _presenter;
 
-    public CardBattlePhaseHandler(IBattleService battles) => _battles = battles;
+    public CardBattlePhaseHandler(IBattleService battles, IRoomStatePresenter presenter)
+    {
+        _battles = battles;
+        _presenter = presenter;
+    }
 
     public RoomPhase Phase => RoomPhase.CardBattle;
 
@@ -69,6 +74,7 @@ public sealed class CardBattlePhaseHandler : IRoomPhaseHandler
         var pair = room.BattlePairs.FirstOrDefault(p => p.PairId == command.PairId)
             ?? throw new ServiceException("Battle is no longer active.");
         await _battles.SyncPairFromBattle(pair, battle);
+        await _presenter.PushPrivateToPairAsync(room, command.PairId, cancellationToken);
 
         if (AllPairsFinished(room))
             return RoomTransitionResult.Go(RoomPhase.BattleResult, "All battles finished.");
@@ -89,6 +95,7 @@ public sealed class CardBattlePhaseHandler : IRoomPhaseHandler
         var pair = room.BattlePairs.FirstOrDefault(p => p.PairId == command.PairId)
             ?? throw new ServiceException("Battle is no longer active.");
         await _battles.SyncPairFromBattle(pair, battle);
+        await _presenter.PushPrivateToPairAsync(room, command.PairId, cancellationToken);
 
         if (AllPairsFinished(room))
             return RoomTransitionResult.Go(RoomPhase.BattleResult, "All battles finished.");

@@ -86,25 +86,24 @@ public class RoomHub : Hub
     public async Task PlayCardInBattle(Guid matchId, string sessionToken, BattlePlayCardRequest request)
     {
         var userId = GetRequiredUserId();
-        var result = await _roomService.PlayCardInBattleAsync(
+        // State machine already broadcasts public RoomUpdated and pushes private snapshots
+        // to both humans in the pair (infection/role/hand). Do not rebroadcast the actor's
+        // private result.State to the room/battle groups — that leaked hands and overwrote
+        // the opponent's myBattle with the actor's me.
+        await _roomService.PlayCardInBattleAsync(
             userId, matchId, sessionToken, request.PairId, request.CardId, request.TargetUserId);
 
-        // Group payloads stay public (no hands). The actor gets a private refresh so inventory stays live.
         var privateState = await _roomService.GetPublicStateAsync(userId, matchId, sessionToken);
         await Clients.Caller.SendAsync("RoomUpdated", privateState);
-        await Clients.Group(BattleGroup(request.PairId)).SendAsync("BattleState", result.State);
-        await Clients.Group(RoomGroup(matchId)).SendAsync("RoomUpdated", result.State);
     }
 
     public async Task PassInBattle(Guid matchId, string sessionToken, BattlePassRequest request)
     {
         var userId = GetRequiredUserId();
-        var result = await _roomService.PassInBattleAsync(userId, matchId, sessionToken, request.PairId);
+        await _roomService.PassInBattleAsync(userId, matchId, sessionToken, request.PairId);
 
         var privateState = await _roomService.GetPublicStateAsync(userId, matchId, sessionToken);
         await Clients.Caller.SendAsync("RoomUpdated", privateState);
-        await Clients.Group(BattleGroup(request.PairId)).SendAsync("BattleState", result.State);
-        await Clients.Group(RoomGroup(matchId)).SendAsync("RoomUpdated", result.State);
     }
 
     public async Task SendChat(Guid matchId, string sessionToken, SendChatRequest request)

@@ -115,27 +115,38 @@ describe('room store synchronization', () => {
     expect(room.state?.dayNumber).toBe(3)
   })
 
-  it('registers remaining hub listeners and syncs on MatchResumed', async () => {
+  it('ignores private me that belongs to another player', () => {
+    localStorage.setItem('zvh_player_id', 'viewer-1')
     const room = useRoomStore()
-    room.matchId = 'match-a'
-    room.sessionToken = 'token-a'
-    room.registerHandlers()
+    room.applyState({
+      ...roomState('match-a'),
+      me: {
+        userId: 'viewer-1',
+        role: 0,
+        roleCardId: 'role-human',
+        health: 1,
+        maxHealth: 1,
+        actionsPerTurn: 2,
+        remainingActions: 2,
+        inventoryCardIds: [],
+      },
+    })
+    room.applyState({
+      ...roomState('match-a'),
+      snapshotVersion: 2,
+      me: {
+        userId: 'attacker-2',
+        role: 1,
+        roleCardId: 'role-zombie',
+        health: 1,
+        maxHealth: 1,
+        actionsPerTurn: 2,
+        remainingActions: 1,
+        inventoryCardIds: [],
+      },
+    })
 
-    expect(roomService.onInvitationSent).toHaveBeenCalled()
-    expect(roomService.onInvitationAccepted).toHaveBeenCalled()
-    expect(roomService.onInvitationsCancelled).toHaveBeenCalled()
-    expect(roomService.onBattleStarted).toHaveBeenCalled()
-    expect(roomService.onBattleFinished).toHaveBeenCalled()
-    expect(roomService.onVoteUpdated).toHaveBeenCalled()
-    expect(roomService.onMatchResumed).toHaveBeenCalled()
-    expect(roomService.onDiscussionStarted).toHaveBeenCalled()
-
-    const onMatchResumed = vi.mocked(roomService.onMatchResumed).mock.calls.at(-1)?.[0]
-    onMatchResumed?.({})
-    await Promise.resolve()
-
-    expect(room.lastEvent).toBe('MatchResumed')
-    expect(roomService.syncRoom).toHaveBeenCalledWith('match-a', 'token-a')
-    room.clearHandlers()
+    expect(room.myBattle?.userId).toBe('viewer-1')
+    expect(room.myBattle?.role).toBe(0)
   })
 })

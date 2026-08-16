@@ -12,6 +12,7 @@ import { RoomPhase, RoomPlayerActivity, WinTeam, DayEventType } from '@/types/en
 import { sameUserId } from '@/utils/ids'
 import { parseRoomPhase } from '@/utils/roomFlow'
 import { errorMessage } from '@/utils/errors'
+import { useAuthStore } from '@/stores/auth.store'
 
 export type RoomPlayerStatus =
   | 'eliminated'
@@ -147,7 +148,15 @@ export const useRoomStore = defineStore('room', () => {
     state.value = next
     snapshotReceivedAt.value = Date.now()
     matchId.value = next.matchId
-    if (next.me) myBattle.value = next.me
+    // Only accept private battle data for this viewer — a leaked opponent "me"
+    // must never overwrite local role/hand (e.g. after poison infection).
+    if (next.me) {
+      const auth = useAuthStore()
+      const viewerId = auth.resolvedUserId
+      if (!viewerId || sameUserId(next.me.userId, viewerId)) {
+        myBattle.value = next.me
+      }
+    }
     if (typeof next.winTeam === 'number' && next.winTeam !== WinTeam.None) {
       winTeam.value = next.winTeam
     }

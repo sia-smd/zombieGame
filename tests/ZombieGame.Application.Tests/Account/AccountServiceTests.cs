@@ -71,6 +71,34 @@ public class AccountServiceTests
     }
 
     [Fact]
+    public async Task VerifyMobile_AcceptsMasterOtp1234()
+    {
+        var users = new InMemoryUserRepository();
+        var profiles = new InMemoryProfileRepository();
+        var playerId = Guid.NewGuid();
+        users.Users.Add(new User { Id = playerId, Username = "Guest123", AccountType = AccountType.Guest });
+        profiles.Profiles.Add(new PlayerProfile { PlayerId = playerId, Name = "Guest123", ImageId = "avatar_default_01" });
+
+        var service = CreateService(
+            users,
+            profiles,
+            new InMemorySessionRepository(),
+            new InMemoryDeviceRepository(),
+            new InMemoryLoginLogRepository(),
+            new FakeTokenService());
+
+        await service.AddMobileAsync(playerId, new AddMobileRequest("09354214334"));
+        var response = await service.VerifyMobileAsync(
+            playerId,
+            new VerifyMobileRequest("09354214334", "1234"));
+
+        Assert.True(response.Success);
+        Assert.Equal("09354214334", users.Users[0].PhoneNumber);
+        Assert.True(users.Users[0].MobileVerified);
+        Assert.Equal(AccountType.Mobile, users.Users[0].AccountType);
+    }
+
+    [Fact]
     public async Task Logout_DeactivatesSessionOnly()
     {
         var users = new InMemoryUserRepository();

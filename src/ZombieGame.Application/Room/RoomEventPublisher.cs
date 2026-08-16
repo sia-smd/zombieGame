@@ -68,6 +68,7 @@ public sealed class NullRoomRealtimeNotifier : IRoomRealtimeNotifier
     public Task BattleStartedAsync(Guid matchId, Guid pairId, object payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task BattleFinishedAsync(Guid matchId, object payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task BattleStateAsync(Guid pairId, object payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task PlayerRoomUpdatedAsync(Guid userId, object payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task DiscussionStartedAsync(Guid matchId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task ChatMessageAsync(Guid matchId, object payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task VoteStartedAsync(Guid matchId, CancellationToken cancellationToken = default) => Task.CompletedTask;

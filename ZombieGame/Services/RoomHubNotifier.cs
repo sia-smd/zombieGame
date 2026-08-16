@@ -42,6 +42,9 @@ public sealed class RoomHubNotifier : IRoomRealtimeNotifier
     public Task BattleStateAsync(Guid pairId, object payload, CancellationToken cancellationToken = default) =>
         _hub.Clients.Group(BattleGroup(pairId)).SendAsync("BattleState", payload, cancellationToken);
 
+    public Task PlayerRoomUpdatedAsync(Guid userId, object payload, CancellationToken cancellationToken = default) =>
+        _hub.Clients.User(userId.ToString()).SendAsync("RoomUpdated", payload, cancellationToken);
+
     public Task DiscussionStartedAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         _hub.Clients.Group(RoomGroup(matchId)).SendAsync("DiscussionStarted", cancellationToken);
 

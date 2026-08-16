@@ -8,7 +8,10 @@ import { useThemeStore } from './stores/theme.store'
 import { useAuthStore } from './stores/auth.store'
 import { useSettingsStore } from './stores/settings.store'
 import { registerAuthFailureHandler } from './services/auth-failure'
+import { registerSW } from 'virtual:pwa-register'
 import './styles/tailwind.css'
+
+registerSW({ immediate: true })
 
 async function bootstrap() {
   const app = createApp(App)

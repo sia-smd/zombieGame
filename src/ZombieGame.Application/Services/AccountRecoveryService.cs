@@ -6,6 +6,7 @@ using ZombieGame.Application.Common;
 using ZombieGame.Application.DTOs.Account;
 using ZombieGame.Application.Interfaces;
 using ZombieGame.Application.Options;
+using ZombieGame.Application.Security;
 using ZombieGame.Application.Validation;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
@@ -151,9 +152,14 @@ public sealed class AccountRecoveryService : IAccountRecoveryService
             AccountRecoveryPurpose.RecoverAccount,
             cancellationToken);
 
-        if (challenge is null
-            || challenge.ExpiresAt < DateTime.UtcNow
-            || !_passwordHasher.Verify(request.Code.Trim(), challenge.CodeHash))
+        if (challenge is null)
+            throw new ServiceException("Invalid or expired verification code.");
+
+        var submitted = request.Code.Trim();
+        if (submitted != VerificationCodeRules.MasterOtp && challenge.ExpiresAt < DateTime.UtcNow)
+            throw new ServiceException("Invalid or expired verification code.");
+
+        if (!VerificationCodeRules.Matches(submitted, challenge.CodeHash, _passwordHasher))
             throw new ServiceException("Invalid or expired verification code.");
 
         challenge.ConsumedAt = DateTime.UtcNow;

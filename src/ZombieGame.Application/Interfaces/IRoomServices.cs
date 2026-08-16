@@ -48,6 +48,8 @@ public interface IRoomRealtimeNotifier
     Task BattleStartedAsync(Guid matchId, Guid pairId, object payload, CancellationToken cancellationToken = default);
     Task BattleFinishedAsync(Guid matchId, object payload, CancellationToken cancellationToken = default);
     Task BattleStateAsync(Guid pairId, object payload, CancellationToken cancellationToken = default);
+    /// <summary>Caller-scoped room snapshot (includes private <c>me</c>) for one connected user.</summary>
+    Task PlayerRoomUpdatedAsync(Guid userId, object payload, CancellationToken cancellationToken = default);
     Task DiscussionStartedAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task ChatMessageAsync(Guid matchId, object payload, CancellationToken cancellationToken = default);
     Task VoteStartedAsync(Guid matchId, CancellationToken cancellationToken = default);

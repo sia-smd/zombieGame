@@ -17,14 +17,27 @@ using ZombieGame.Application.Services;
 using ZombieGame.Domain.Interfaces;
 using ZombieGame.Infrastructure;
 using ZombieGame.Infrastructure.Health;
+using ZombieGame.Infrastructure.Logging;
 using ZombieGame.Infrastructure.Persistence;
 using ZombieGame.Infrastructure.Sms;
+using ZombieGame.Api.Middleware;
 
 public static class Program
 {
     public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.Configure<DailyExceptionLogOptions>(
+            builder.Configuration.GetSection(DailyExceptionLogOptions.SectionName));
+
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConsole();
+        builder.Logging.AddProvider(new DailyExceptionLoggerProvider(
+            Microsoft.Extensions.Options.Options.Create(
+                builder.Configuration.GetSection(DailyExceptionLogOptions.SectionName)
+                    .Get<DailyExceptionLogOptions>() ?? new DailyExceptionLogOptions()),
+            builder.Environment.ContentRootPath));
 
         builder.Services.AddApplication(builder.Configuration);
         builder.Services.AddInfrastructure(builder.Configuration);
@@ -199,6 +212,7 @@ public static class Program
             app.UseSwaggerUI();
         }
 
+        app.UseMiddleware<ExceptionLoggingMiddleware>();
         app.UseHttpsRedirection();
         var webRoot = app.Environment.WebRootPath
             ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");

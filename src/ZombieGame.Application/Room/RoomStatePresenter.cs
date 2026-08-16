@@ -16,6 +16,12 @@ public interface IRoomStatePresenter
     Task<RoomStateDto> BuildPrivateAsync(RoomState room, Guid viewerId, CancellationToken cancellationToken = default);
 
     Task BroadcastAsync(RoomState room, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes a private room snapshot to each human in the pair so role/hand changes
+    /// (e.g. infection) reach the victim immediately — group broadcasts omit <c>me</c>.
+    /// </summary>
+    Task PushPrivateToPairAsync(RoomState room, Guid pairId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -92,6 +98,26 @@ public sealed class RoomStatePresenter : IRoomStatePresenter
             await BuildAvailableOpponentsAsync(room, cancellationToken));
 
         await _notifier.RoomUpdatedAsync(room.MatchId, state, cancellationToken);
+    }
+
+    public async Task PushPrivateToPairAsync(
+        RoomState room,
+        Guid pairId,
+        CancellationToken cancellationToken = default)
+    {
+        var pair = room.BattlePairs.FirstOrDefault(p => p.PairId == pairId);
+        if (pair is null)
+            return;
+
+        foreach (var userId in new[] { pair.Player1Id, pair.Player2Id })
+        {
+            var player = room.GetPlayer(userId);
+            if (player is null || player.IsBot)
+                continue;
+
+            var dto = await BuildPrivateAsync(room, userId, cancellationToken);
+            await _notifier.PlayerRoomUpdatedAsync(userId, dto, cancellationToken);
+        }
     }
 
     /// <summary>

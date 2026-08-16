@@ -6,6 +6,7 @@ using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.GameRules.Events;
 using ZombieGame.Application.Options;
 using ZombieGame.Application.Tests.Support;
+using ZombieGame.Domain.Cards;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Models;
@@ -53,15 +54,35 @@ public class InfectionTransformationTests
     }
 
     [Fact]
+    public void ZombiePoison_ViaEngine_ConvertsHumanToZombie()
+    {
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = CreateDayState(humanId, zombieId);
+        GameTestBuilder.AddCardsToHand(state, zombieId, TestCards.ZombiePoison);
+
+        var result = _engine.PlayCard(state, zombieId, TestCards.ZombiePoison, humanId);
+
+        Assert.True(result.Success);
+        Assert.True(result.RoleChanged);
+        Assert.Equal(PlayerRole.Zombie, state.Player(humanId).Role);
+        Assert.Equal(RoleCardCatalog.Infection, state.PlayerHands.First(h => h.UserId == humanId).RoleCardId);
+        Assert.True(state.Player(zombieId).HasRevealedThisDay);
+    }
+
+    [Fact]
     public void InfectedHuman_WithShieldCard_CanStillUseShield()
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
         var state = CreateDayState(humanId, zombieId);
         GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shield, TestCards.Shotgun, TestCards.Heal);
+        // Spend actions so shield-in-hand priority does not auto-block infection.
+        state.Player(humanId).ActionsUsedThisTurn = state.Player(humanId).ActionsPerTurn;
 
         Infect(state, zombieId, humanId);
         Assert.Equal(PlayerRole.Zombie, state.Player(humanId).Role);
+        GameTestBuilder.ResetActionPoints(state);
 
         var shieldResult = _engine.PlayCard(state, humanId, TestCards.Shield, humanId);
 
@@ -82,6 +103,7 @@ public class InfectionTransformationTests
         state.CurrentPhase = GamePhase.Day;
         GameTestBuilder.ResetActionPoints(state);
         GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shotgun, TestCards.Shield);
+        state.Player(humanId).ActionsUsedThisTurn = state.Player(humanId).ActionsPerTurn;
 
         Infect(state, zombieId, humanId);
         state.Player(otherHumanId).HasRevealedThisDay = true;
@@ -132,11 +154,12 @@ public class InfectionTransformationTests
         var zombieId = Guid.NewGuid();
         var state = CreateDayState(humanId, zombieId);
         GameTestBuilder.AddCardsToHand(state, humanId, TestCards.Shield, TestCards.Shotgun);
+        state.Player(humanId).ActionsUsedThisTurn = state.Player(humanId).ActionsPerTurn;
 
         var result = Infect(state, zombieId, humanId);
 
         var hand = state.PlayerHands.First(h => h.UserId == humanId);
-        Assert.Equal(2, hand.InventoryCount());
+        Assert.Contains(ActionCardCatalog.ZombiePoison, hand.GetInventoryCardIds());
         Assert.Equal(TestCards.Infection.Id, hand.RoleCardId);
         Assert.DoesNotContain(TestCards.Shield.Id, hand.DisabledCardIds);
         Assert.Contains(TestCards.Shotgun.Id, hand.DisabledCardIds);
