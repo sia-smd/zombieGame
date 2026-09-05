@@ -11,7 +11,16 @@ public interface IRoomService
     Task<RoomActionResult> StartGameAsync(Guid userId, Guid matchId, string sessionToken, CancellationToken cancellationToken = default);
     Task<RoomActionResult> SendInvitationAsync(Guid userId, Guid matchId, string sessionToken, Guid targetUserId, CancellationToken cancellationToken = default);
     Task<RoomActionResult> RespondInvitationAsync(Guid userId, Guid matchId, string sessionToken, Guid invitationId, bool accept, CancellationToken cancellationToken = default);
-    Task<RoomActionResult> PlayCardInBattleAsync(Guid userId, Guid matchId, string sessionToken, Guid pairId, Guid cardId, Guid? targetUserId, CancellationToken cancellationToken = default);
+    Task<RoomActionResult> PlayCardInBattleAsync(
+        Guid userId,
+        Guid matchId,
+        string sessionToken,
+        Guid pairId,
+        Guid cardId,
+        Guid? targetUserId,
+        int? inventorySlotIndex = null,
+        CancellationToken cancellationToken = default);
+    Task<RoomActionResult> FinishBattleTurnAsync(Guid userId, Guid matchId, string sessionToken, Guid pairId, CancellationToken cancellationToken = default);
     Task<RoomActionResult> PassInBattleAsync(Guid userId, Guid matchId, string sessionToken, Guid pairId, CancellationToken cancellationToken = default);
     Task<RoomActionResult> SendChatAsync(Guid userId, Guid matchId, string sessionToken, string text, CancellationToken cancellationToken = default);
     Task<RoomActionResult> VoteAsync(Guid userId, Guid matchId, string sessionToken, Guid targetUserId, CancellationToken cancellationToken = default);

@@ -36,4 +36,4 @@ public interface IBotService
 }
 
 public record PendingBotAction(string ActionType, string PayloadJson, string IdempotencyKey);
-public sealed record BotCardPlayDecision(Guid CardId, Guid? TargetUserId);
+public sealed record BotCardPlayDecision(Guid CardId, Guid? TargetUserId, int? InventorySlotIndex = null);

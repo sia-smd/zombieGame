@@ -16,6 +16,8 @@ public interface IGameRulesEngine
 {
     void StartMatch(GameSessionState state, Match match);
     CardEffectResult PlayCard(GameSessionState state, Guid actorUserId, CardDefinition card, Guid targetUserId);
+    /// <summary>Apply a queued battle card without consuming an action point.</summary>
+    CardEffectResult ApplyCardEffect(GameSessionState state, Guid actorUserId, CardDefinition card, Guid targetUserId);
     void PassAction(GameSessionState state, Guid actorUserId);
     void EndDayPhase(GameSessionState state, GameSettings settings);
     void CastVote(GameSessionState state, Guid voterId, Guid targetId);
@@ -85,6 +87,40 @@ public sealed class GameRulesEngine : IGameRulesEngine
         ConsumeActionPoint(state, actorUserId);
 
         var actor = state.GetPlayer(actorUserId)!;
+        var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == actorUserId)
+            ?? throw new ServiceException("Player hand not found.");
+
+        _cardValidator.ValidateCardPlayable(card.Id);
+        _cardValidator.ValidateCardNotDisabled(hand, card.Id);
+        _cardValidator.ValidateRoleCanPlayCard(actor.Role, card.EffectKey);
+        _cardValidator.ValidateTargetRequired(card.EffectKey, targetUserId, actorUserId);
+
+        var context = new CardEffectContext
+        {
+            State = state,
+            ActorUserId = actorUserId,
+            TargetUserId = targetUserId,
+            Card = card
+        };
+
+        var result = _cardEffects.Play(context);
+
+        if (result.FriendlyFire)
+            state.FriendlyFireCount++;
+
+        RecordProgressCounters(state, actor, result);
+
+        return result;
+    }
+
+    public CardEffectResult ApplyCardEffect(
+        GameSessionState state,
+        Guid actorUserId,
+        CardDefinition card,
+        Guid targetUserId)
+    {
+        var actor = state.GetPlayer(actorUserId)
+            ?? throw new ServiceException("Player not found.");
         var hand = state.PlayerHands.FirstOrDefault(h => h.UserId == actorUserId)
             ?? throw new ServiceException("Player hand not found.");
 

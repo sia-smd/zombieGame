@@ -44,20 +44,26 @@ export const roomService = {
     pairId: string,
     cardId: string,
     targetUserId?: string | null,
+    inventorySlotIndex?: number | null,
   ): Promise<void> {
     await invokeHub('room', 'PlayCardInBattle', matchId, sessionToken, {
       pairId,
       cardId,
       targetUserId: targetUserId ?? null,
+      inventorySlotIndex: inventorySlotIndex ?? null,
+      idempotencyKey: createIdempotencyKey(),
+    })
+  },
+
+  async finishBattleTurn(matchId: string, sessionToken: string, pairId: string): Promise<void> {
+    await invokeHub('room', 'FinishBattleTurn', matchId, sessionToken, {
+      pairId,
       idempotencyKey: createIdempotencyKey(),
     })
   },
 
   async passInBattle(matchId: string, sessionToken: string, pairId: string): Promise<void> {
-    await invokeHub('room', 'PassInBattle', matchId, sessionToken, {
-      pairId,
-      idempotencyKey: createIdempotencyKey(),
-    })
+    await this.finishBattleTurn(matchId, sessionToken, pairId)
   },
 
   async sendChat(matchId: string, sessionToken: string, text: string): Promise<void> {

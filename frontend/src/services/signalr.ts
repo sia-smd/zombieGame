@@ -4,8 +4,9 @@ import {
   HubConnectionState,
   LogLevel,
 } from '@microsoft/signalr'
-import { tokenStorage, requireConfiguredUrl } from './api'
+import { requireConfiguredUrl } from './api'
 import type { SignalREventMap } from '@/types/api'
+import { isE2eHarness } from '@/utils/e2eRoom'
 
 export type HubName = 'room' | 'game'
 export type SignalREvent = keyof SignalREventMap
@@ -69,6 +70,10 @@ function attachConnectionLifecycle(hub: HubName, connection: HubConnection) {
 }
 
 export async function connectHub(hub: HubName): Promise<HubConnection> {
+  if (isE2eHarness()) {
+    throw new Error(`${hub} hub is disabled in the e2e harness.`)
+  }
+
   const pending = connectionPromises.get(hub)
   if (pending) return pending
 
@@ -86,7 +91,7 @@ export async function connectHub(hub: HubName): Promise<HubConnection> {
   const startPromise = (async () => {
     const connection = new HubConnectionBuilder()
       .withUrl(hubUrl(hub), {
-        accessTokenFactory: () => tokenStorage.getAccess() ?? '',
+        withCredentials: true,
       })
       .withAutomaticReconnect([0, 2000, 5000, 10000])
       .configureLogging(import.meta.env.DEV ? LogLevel.Information : LogLevel.Warning)

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { disconnectAllHubs } from '@/services/signalr'
-import { tokenStorage } from '@/services/api'
+import { authSession } from '@/services/api'
 import { profileService } from '@/services/profile.service'
 import { useAuthStore } from './auth.store'
 import { useRoomStore } from './room.store'
@@ -45,14 +45,17 @@ describe('auth store session lifecycle', () => {
     expect(auth.getMatchSession('match-b')).toBeNull()
   })
 
-  it('removes a stale refresh token when new credentials omit one', () => {
+  it('marks signed-in without storing JWTs', () => {
     localStorage.setItem('zvh_refresh_token', 'old-refresh')
+    localStorage.setItem('zvh_access_token', 'old-access')
     const auth = useAuthStore()
 
-    auth.setTokens('new-access')
+    auth.setTokens('new-access', 'new-refresh')
 
-    expect(tokenStorage.getAccess()).toBe('new-access')
-    expect(tokenStorage.getRefresh()).toBeNull()
+    expect(auth.isAuthenticated).toBe(true)
+    expect(authSession.isSignedIn()).toBe(true)
+    expect(localStorage.getItem('zvh_access_token')).toBeNull()
+    expect(localStorage.getItem('zvh_refresh_token')).toBeNull()
   })
 
   it('clears auth, room, game and persisted match state together', async () => {
@@ -60,7 +63,7 @@ describe('auth store session lifecycle', () => {
     const room = useRoomStore()
     const game = useGameStore()
     auth.setUserId('player-1')
-    auth.setTokens('access', 'refresh')
+    auth.setTokens()
     auth.setMatchSession('match-a', 'token-a')
     room.matchId = 'match-a'
     game.isInQueue = true
@@ -69,13 +72,14 @@ describe('auth store session lifecycle', () => {
 
     expect(disconnectAllHubs).toHaveBeenCalledTimes(1)
     expect(auth.isAuthenticated).toBe(false)
+    expect(authSession.isSignedIn()).toBe(false)
     expect(auth.matchSession).toBeNull()
     expect(room.matchId).toBeNull()
     expect(game.isInQueue).toBe(false)
     expect(localStorage.getItem('zvh_player_id')).toBeNull()
   })
 
-  it('loads server profile when a stored session already exists', async () => {
+  it('loads server profile when a signed-in session already exists', async () => {
     vi.mocked(profileService.getProfile).mockResolvedValue({
       playerId: 'player-1',
       accountType: 0,
@@ -91,9 +95,8 @@ describe('auth store session lifecycle', () => {
       createdDate: '2026-01-01',
     })
 
-    localStorage.setItem('zvh_access_token', 'access')
     const auth = useAuthStore()
-    auth.setTokens('access')
+    auth.setTokens()
 
     await auth.initGuest()
 

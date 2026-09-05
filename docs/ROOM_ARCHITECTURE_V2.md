@@ -124,14 +124,15 @@ Each timed phase handler:
 - Required sets: alive players (OpponentSelection: unpaired only; Battle: in active battle; etc.)
 - Timer remains fallback via `OnTickAsync`
 
-## Battle Turn (2 actions)
+## Battle Turn (queue + finish)
 
 `GameSettings.ActionsPerTurn = 2`
 
-- Each card play spends one action point; the turn ends only when both are spent.
-- A Pass spends the whole turn: the remaining action point is burned and no second card can follow.
-- `BattleService` marks a player finished from `GamePlayerState.RemainingActions`, never from "played once".
-- Bots are re-armed by `RoomBotScheduler.ScheduleNextBattleAction` while they still have an action point.
+- Each card play queues one card and spends one action point (max 2 cards per turn).
+- Effects resolve only after **both** players press **Finish** (`FinishTurnAsync`), then `ResolveBattleAsync` runs in priority order (shield → heal → shoot → infect).
+- Playing cards does **not** mark a player finished; only `FinishTurnAsync`, `PassAsync` (alias), timer expiry, or disconnect grace does.
+- A Pass card queued as the first action burns the remaining action point but still requires Finish (or auto-pass) to lock the turn.
+- Bots call `FinishTurnAsync` after they have no remaining action points or nothing left to queue.
 
 ## Player Activity Badge
 

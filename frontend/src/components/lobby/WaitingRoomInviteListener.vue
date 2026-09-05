@@ -9,6 +9,7 @@ import { connectHub } from '@/services/signalr'
 import { roomService } from '@/services/room.service'
 import { gameService } from '@/services/game.service'
 import type { RoomInviteReceivedDto } from '@/types/api'
+import { isE2eHarness } from '@/utils/e2eRoom'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -29,13 +30,15 @@ const message = computed(() => {
 })
 
 onMounted(() => {
+  if (isE2eHarness()) return
   if (auth.isAuthenticated) void connectHub('room').catch(() => undefined)
 })
 
 watch(
   () => auth.isAuthenticated,
   (ok) => {
-    if (ok) void connectHub('room').catch(() => undefined)
+    if (isE2eHarness() || !ok) return
+    void connectHub('room').catch(() => undefined)
   },
 )
 

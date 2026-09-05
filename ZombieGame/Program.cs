@@ -71,11 +71,14 @@ public static class Program
                 {
                     OnMessageReceived = context =>
                     {
-                        var accessToken = context.Request.Query["access_token"];
-                        var path = context.HttpContext.Request.Path;
-                        if (!string.IsNullOrEmpty(accessToken) &&
-                            (path.StartsWithSegments("/hubs/game") || path.StartsWithSegments("/hubs/room")))
-                            context.Token = accessToken;
+                        // Authorization: Bearer is handled by the handler when Token is left unset.
+                        if (!string.IsNullOrEmpty(context.Request.Headers.Authorization))
+                            return Task.CompletedTask;
+
+                        context.Token = JwtBearerTokenResolver.Resolve(
+                            context.Request.Cookies[AuthCookieNames.AccessToken],
+                            context.Request.Query["access_token"],
+                            context.HttpContext.Request.Path);
                         return Task.CompletedTask;
                     },
                     OnTokenValidated = async context =>

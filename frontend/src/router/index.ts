@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { tokenStorage } from '@/services/api'
+import { authSession } from '@/services/api'
 import { useAuthStore } from '@/stores/auth.store'
 
 const routes: RouteRecordRaw[] = [
@@ -119,11 +119,11 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (to.meta.public) return true
-  if (tokenStorage.getAccess()) {
+  if (authSession.isSignedIn()) {
     const auth = useAuthStore()
     auth.hydrateFromStorage()
     if (!auth.profile) await auth.loadProfile().catch(() => undefined)
     return true
   }
-  return { name: 'login', query: { redirect: to.fullPath } }
+  return { name: 'splash' }
 })

@@ -38,7 +38,7 @@ vi.mock('axios', () => ({
   },
 }))
 
-import { tokenStorage } from './api'
+import { authSession } from './api'
 
 function unauthorized(config: Record<string, unknown>) {
   return {
@@ -56,14 +56,9 @@ describe('API refresh and auth failure lifecycle', () => {
     axiosMocks.refreshClient.post.mockReset()
   })
 
-  it('retries an unauthorized request only once after refresh', async () => {
-    tokenStorage.set('old-access', 'refresh-token')
-    axiosMocks.refreshClient.post.mockResolvedValueOnce({
-      data: {
-        accessToken: 'new-access',
-        refreshToken: 'new-refresh',
-      },
-    })
+  it('retries an unauthorized request once after cookie refresh', async () => {
+    authSession.markSignedIn()
+    axiosMocks.refreshClient.post.mockResolvedValueOnce({ data: {} })
     const reject = axiosMocks.responseReject()
     expect(reject).not.toBeNull()
     const config = { headers: {} as Record<string, string> }
@@ -71,15 +66,14 @@ describe('API refresh and auth failure lifecycle', () => {
     await reject!(unauthorized(config))
 
     expect(axiosMocks.refreshClient.post).toHaveBeenCalledTimes(1)
+    expect(axiosMocks.refreshClient.post).toHaveBeenCalledWith('/api/account/refresh-token', {})
     expect(axiosMocks.apiClient).toHaveBeenCalledTimes(1)
-    expect(config).toMatchObject({
-      _retry: true,
-      headers: { Authorization: 'Bearer new-access' },
-    })
+    expect(config).toMatchObject({ _retry: true })
+    expect(config.headers.Authorization).toBeUndefined()
   })
 
-  it('notifies auth teardown once when refresh fails', async () => {
-    tokenStorage.set('access', 'invalid-refresh')
+  it('notifies auth teardown once when cookie refresh fails', async () => {
+    authSession.markSignedIn()
     axiosMocks.refreshClient.post.mockRejectedValue(new Error('refresh rejected'))
     const teardown = vi.fn().mockResolvedValue(undefined)
     registerAuthFailureHandler(teardown)
@@ -93,7 +87,8 @@ describe('API refresh and auth failure lifecycle', () => {
     })
 
     expect(teardown).toHaveBeenCalledTimes(1)
-    expect(tokenStorage.getAccess()).toBeNull()
-    expect(tokenStorage.getRefresh()).toBeNull()
+    expect(authSession.isSignedIn()).toBe(false)
+    expect(localStorage.getItem('zvh_access_token')).toBeNull()
+    expect(localStorage.getItem('zvh_refresh_token')).toBeNull()
   })
 })

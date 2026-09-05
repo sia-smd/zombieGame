@@ -1,6 +1,7 @@
 namespace ZombieGame.Application.Room.Phases;
 
 using ZombieGame.Application.GameRules;
+using ZombieGame.Application.GameRules.Events;
 using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Models.Room;
 
@@ -8,11 +9,16 @@ public sealed class VoteResultPhaseHandler : IRoomPhaseHandler
 {
     private readonly IVotingService _voting;
     private readonly IWinConditionService _winConditions;
+    private readonly IDayEventService _dayEvents;
 
-    public VoteResultPhaseHandler(IVotingService voting, IWinConditionService winConditions)
+    public VoteResultPhaseHandler(
+        IVotingService voting,
+        IWinConditionService winConditions,
+        IDayEventService dayEvents)
     {
         _voting = voting;
         _winConditions = winConditions;
+        _dayEvents = dayEvents;
     }
 
     public RoomPhase Phase => RoomPhase.VoteResult;
@@ -53,12 +59,19 @@ public sealed class VoteResultPhaseHandler : IRoomPhaseHandler
         {
             room.WinTeam = winTeam.Value;
             room.Session.WinTeam = winTeam.Value;
+            room.NextDayNumber = null;
+            room.NextDayEvent = null;
             return Task.FromResult(RoomTransitionResult.Go(
                 RoomPhase.Finished,
                 "Game finished.",
                 events.Append(new GameFinishedEvent(winTeam.Value)).ToArray()));
         }
 
+        var nextDay = room.DayNumber + 1;
+        room.NextDayNumber = nextDay;
+        room.NextDayEvent = nextDay > 1
+            ? _dayEvents.PickRandomEvent()
+            : DayEventType.NormalDay;
         room.PhaseEndsAt = DateTime.UtcNow.AddSeconds(context.Settings.VoteResultDisplaySeconds);
         return Task.FromResult(RoomTransitionResult.Stay("Vote result published.", events));
     }

@@ -30,6 +30,8 @@ public class BattleCardPlay
 {
     public Guid PlayerId { get; set; }
     public Guid CardId { get; set; }
+    /// <summary>Inventory slot (0–3) when the same card id appears in multiple slots.</summary>
+    public int? InventorySlotIndex { get; set; }
     public Guid? TargetUserId { get; set; }
     public DateTime PlayedAt { get; set; }
 }

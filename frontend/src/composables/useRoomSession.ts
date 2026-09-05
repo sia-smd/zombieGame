@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useRoomStore } from '@/stores/room.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import { translate } from '@/i18n'
+import { tryApplyE2eRoomState } from '@/utils/e2eRoom'
 
 export type RoomSessionMode = 'join' | 'resume'
 
@@ -67,6 +68,15 @@ export function useRoomSession(
         if (!token) {
           if (!disposed) await router.replace({ name: 'home' })
           return false
+        }
+
+        if (tryApplyE2eRoomState(room, id, token)) {
+          if (disposed || generation !== runGeneration || toValue(matchId) !== id) {
+            return false
+          }
+          bootstrappedMatchId = id
+          ready.value = true
+          return true
         }
 
         const hasSameRoomState =

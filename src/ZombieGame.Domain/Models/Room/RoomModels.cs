@@ -16,6 +16,9 @@ public class RoomState
     public int DayNumber { get; set; }
     public DateTime? PhaseEndsAt { get; set; }
     public DayEventType CurrentDayEvent { get; set; } = DayEventType.NormalDay;
+    /// <summary>Preview shown during VoteResult before the day counter increments.</summary>
+    public int? NextDayNumber { get; set; }
+    public DayEventType? NextDayEvent { get; set; }
     public WinTeam WinTeam { get; set; } = WinTeam.None;
     public List<RoomPlayerState> Players { get; set; } = new();
     public List<BattleInvitation> PendingInvitations { get; set; } = new();

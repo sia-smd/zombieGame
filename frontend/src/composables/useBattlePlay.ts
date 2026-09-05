@@ -13,6 +13,15 @@ import { resolveAvatarUrl } from '@/utils/avatarAssets'
 import { playerAvatarUrl } from '@/utils/playerAvatar'
 import { sameUserId } from '@/utils/ids'
 import { roomService } from '@/services/room.service'
+import { gameAudio } from '@/services/game-audio'
+import { isE2eHarness } from '@/utils/e2eRoom'
+
+export type InventoryCard = {
+  slotIndex: number
+  id: string
+  image: string
+  disabled: boolean
+}
 
 export type OpponentSlot = { kind: 'hidden' | 'pass' | 'card'; cardId?: string } | null
 
@@ -23,7 +32,7 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
   const settings = useSettingsStore()
   const { t } = useI18n()
 
-  const selectedCard = ref<string | null>(null)
+  const selectedSlot = ref<number | null>(null)
   const actionLoading = ref(false)
   const myPlayedCards = ref<string[]>([])
   const cardsRevealed = ref(false)
@@ -48,7 +57,12 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
 
   const actionsPerTurn = computed(() => me.value?.actionsPerTurn ?? 2)
   const remainingActions = computed(() => me.value?.remainingActions ?? actionsPerTurn.value)
-  const isTurnOver = computed(() => remainingActions.value <= 0)
+  const myTurnFinished = computed(() => !!me.value?.myTurnFinished)
+  const isTurnOver = computed(() => myTurnFinished.value)
+  const canPlayMoreCards = computed(
+    () => !isTurnOver.value && !holdingForReveal.value && remainingActions.value > 0,
+  )
+  const needsFinish = computed(() => !isTurnOver.value && !holdingForReveal.value && remainingActions.value <= 0)
 
   const myPair = computed(
     () =>
@@ -78,15 +92,32 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     ) as BattlePublicAction
   })
 
-  const inventoryCards = computed(() =>
-    (me.value?.inventoryCardIds ?? []).map((id) => {
+  const inventoryCards = computed<InventoryCard[]>(() => {
+    const slots = me.value?.inventorySlots
+    if (slots?.length) {
+      return slots.flatMap((id, slotIndex) => {
+        if (!id) return []
+        const sunnyBlocksPowerPoison =
+          room.currentDayEvent === DayEventType.SunnyDay &&
+          myRole.value === PlayerRole.PowerZombie &&
+          id.toLowerCase() === ActionCardIds.poison
+        return [{ slotIndex, id, image: getCardImage(id), disabled: sunnyBlocksPowerPoison }]
+      })
+    }
+
+    return (me.value?.inventoryCardIds ?? []).map((id, slotIndex) => {
       const sunnyBlocksPowerPoison =
         room.currentDayEvent === DayEventType.SunnyDay &&
         myRole.value === PlayerRole.PowerZombie &&
         id.toLowerCase() === ActionCardIds.poison
-      return { id, image: getCardImage(id), disabled: sunnyBlocksPowerPoison }
-    }),
-  )
+      return { slotIndex, id, image: getCardImage(id), disabled: sunnyBlocksPowerPoison }
+    })
+  })
+
+  const selectedCard = computed(() => {
+    if (selectedSlot.value === null) return null
+    return inventoryCards.value.find((c) => c.slotIndex === selectedSlot.value)?.id ?? null
+  })
 
   const emptyHandSlots = computed(() => Math.max(0, 4 - inventoryCards.value.length))
 
@@ -113,14 +144,14 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
 
   const serverPlayed = computed(() => me.value?.playedCardIds ?? [])
   const opponentRevealedCards = computed(() => me.value?.opponentPlayedCardIds ?? [])
-  const opponentFinished = computed(() => !!me.value?.opponentFinished || !!me.value?.battleFinished)
+  const opponentFinished = computed(() => !!me.value?.opponentFinished)
   const battleFinished = computed(
     () =>
       !!me.value?.battleFinished ||
       room.currentPhase === RoomPhase.BattleResult ||
       room.currentPhase === RoomPhase.DaySummary,
   )
-  const bothTurnsDone = computed(() => isTurnOver.value && opponentFinished.value)
+  const bothTurnsDone = computed(() => myTurnFinished.value && opponentFinished.value)
 
   const myPlayedSlots = computed(() => {
     const source = myPlayedCards.value.length ? myPlayedCards.value : serverPlayed.value
@@ -132,7 +163,14 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
   const opponentPlayedSlots = computed(() => {
     const slots: OpponentSlot[] = []
     for (let i = 0; i < actionsPerTurn.value; i++) slots.push(null)
-    if (!bothTurnsDone.value && !battleFinished.value) return slots
+
+    if (!bothTurnsDone.value && !battleFinished.value) {
+      if (opponentFinished.value) {
+        const count = Math.max(1, opponentRevealedCards.value.length || (opponentAction.value === BattlePublicAction.Pass ? 1 : 0))
+        for (let i = 0; i < Math.min(count, slots.length); i++) slots[i] = { kind: 'hidden' }
+      }
+      return slots
+    }
 
     if (cardsRevealed.value && opponentRevealedCards.value.length) {
       opponentRevealedCards.value.forEach((id, i) => {
@@ -177,14 +215,25 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     router.replace({ name: 'battle-summary', params: { id: toValue(matchId) } })
   }
 
-  function startRevealSequence() {
+  async function startRevealSequence() {
     if (cardsRevealed.value || holdingForReveal.value) return
     holdingForReveal.value = true
 
     const id = toValue(matchId)
-    if (token.value) void roomService.syncRoom(id, token.value).catch(() => undefined)
+    if (token.value) {
+      try {
+        await roomService.syncRoom(id, token.value)
+      } catch {
+        // reveal still proceeds; a later sync may fill opponent cards
+      }
+    }
+
+    if (opponentRevealedCards.value.length === 0 && token.value) {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
 
     revealTimer = setTimeout(() => {
+      gameAudio.playSfx('showResultPlayCard')
       cardsRevealed.value = true
       showResultBanner.value = true
       leaveTimer = setTimeout(() => {
@@ -207,7 +256,7 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     const id = toValue(matchId)
 
     const battleId = pairId.value
-    if (battleId) {
+    if (battleId && !isE2eHarness()) {
       try {
         await roomService.joinBattle(id, session, battleId)
       } catch {
@@ -232,22 +281,17 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
         cardsRevealed.value = false
         showResultBanner.value = false
         holdingForReveal.value = false
+        selectedSlot.value = null
         clearRevealTimers()
       }
     },
   )
 
-  watch(opponentFinished, (done) => {
-    if (done && token.value) {
-      void roomService.syncRoom(toValue(matchId), token.value).catch(() => undefined)
-    }
-  })
-
   watch(
     [battleFinished, bothTurnsDone],
     ([finished, bothDone]) => {
       if ((finished || bothDone) && !cardsRevealed.value) {
-        startRevealSequence()
+        void startRevealSequence()
       }
     },
   )
@@ -257,7 +301,7 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     (phase) => {
       if (phase === RoomPhase.BattleResult || phase === RoomPhase.DaySummary) {
         if (!cardsRevealed.value) {
-          startRevealSequence()
+          void startRevealSequence()
           return
         }
         if (!holdingForReveal.value) goToBattleSummary()
@@ -265,17 +309,26 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     },
   )
 
-  function isCardBlocked(cardId: string) {
-    return !!inventoryCards.value.find((c) => c.id === cardId)?.disabled
+  watch(opponentRevealedCards, (cards) => {
+    if (holdingForReveal.value && !cardsRevealed.value && cards.length > 0 && bothTurnsDone.value) {
+      cardsRevealed.value = true
+      gameAudio.playSfx('showResultPlayCard')
+    }
+  })
+
+  function isCardBlocked(card: InventoryCard) {
+    return card.disabled
   }
 
-  function toggleCard(cardId: string) {
+  function toggleCard(slotIndex: number) {
     if (isTurnOver.value || holdingForReveal.value) return
-    if (isCardBlocked(cardId)) {
+    const card = inventoryCards.value.find((c) => c.slotIndex === slotIndex)
+    if (!card) return
+    if (isCardBlocked(card)) {
       settings.pushToast('info', t('playBattle.cardDisabledSunny'))
       return
     }
-    selectedCard.value = selectedCard.value === cardId ? null : cardId
+    selectedSlot.value = selectedSlot.value === slotIndex ? null : slotIndex
   }
 
   function resolveTarget(cardId: string): string | undefined {
@@ -283,12 +336,21 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     return opponentId.value ?? undefined
   }
 
-  async function playCard(cardIdOverride?: string) {
-    const cardId = cardIdOverride ?? selectedCard.value
+  async function playCard(slotIndexOverride?: number) {
+    const slotIndex = slotIndexOverride ?? selectedSlot.value
+    const card = inventoryCards.value.find((c) => c.slotIndex === slotIndex)
     const pair = pairId.value
-    if (!cardId || !pair || !token.value || isTurnOver.value || actionLoading.value || holdingForReveal.value)
+    if (
+      !card ||
+      !pair ||
+      !token.value ||
+      isTurnOver.value ||
+      actionLoading.value ||
+      holdingForReveal.value ||
+      remainingActions.value <= 0
+    )
       return
-    if (isCardBlocked(cardId)) {
+    if (isCardBlocked(card)) {
       settings.pushToast('info', t('playBattle.cardDisabledSunny'))
       return
     }
@@ -299,11 +361,12 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
         toValue(matchId),
         token.value,
         pair,
-        cardId,
-        resolveTarget(cardId),
+        card.id,
+        resolveTarget(card.id),
+        card.slotIndex,
       )
-      myPlayedCards.value = [...myPlayedCards.value, cardId]
-      selectedCard.value = null
+      myPlayedCards.value = [...myPlayedCards.value, card.id]
+      selectedSlot.value = null
     } catch (e: unknown) {
       settings.reportError(e)
     } finally {
@@ -311,14 +374,36 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     }
   }
 
-  function onDragStart(event: DragEvent, cardId: string) {
-    if (isTurnOver.value || actionLoading.value || holdingForReveal.value || isCardBlocked(cardId)) {
+  async function finishTurn() {
+    const pair = pairId.value
+    if (!pair || !token.value || isTurnOver.value || actionLoading.value || holdingForReveal.value) return
+
+    actionLoading.value = true
+    try {
+      await roomService.finishBattleTurn(toValue(matchId), token.value, pair)
+    } catch (e: unknown) {
+      settings.reportError(e)
+    } finally {
+      actionLoading.value = false
+    }
+  }
+
+  function onDragStart(event: DragEvent, slotIndex: number) {
+    const card = inventoryCards.value.find((c) => c.slotIndex === slotIndex)
+    if (
+      !card ||
+      isTurnOver.value ||
+      actionLoading.value ||
+      holdingForReveal.value ||
+      remainingActions.value <= 0 ||
+      isCardBlocked(card)
+    ) {
       event.preventDefault()
       return
     }
-    event.dataTransfer?.setData('text/card-id', cardId)
+    event.dataTransfer?.setData('text/card-slot', String(slotIndex))
     event.dataTransfer!.effectAllowed = 'move'
-    selectedCard.value = cardId
+    selectedSlot.value = slotIndex
   }
 
   function onDragOver(event: DragEvent) {
@@ -329,9 +414,11 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
 
   async function onDropPlay(event: DragEvent) {
     event.preventDefault()
-    const cardId = event.dataTransfer?.getData('text/card-id')
-    if (!cardId) return
-    await playCard(cardId)
+    const raw = event.dataTransfer?.getData('text/card-slot')
+    if (!raw) return
+    const slotIndex = Number.parseInt(raw, 10)
+    if (Number.isNaN(slotIndex)) return
+    await playCard(slotIndex)
   }
 
   function showHelp() {
@@ -342,6 +429,7 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     room,
     t,
     isBootstrapping,
+    selectedSlot,
     selectedCard,
     actionLoading,
     cardsRevealed,
@@ -349,7 +437,10 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     holdingForReveal,
     actionsPerTurn,
     remainingActions,
+    myTurnFinished,
     isTurnOver,
+    canPlayMoreCards,
+    needsFinish,
     inventoryCards,
     emptyHandSlots,
     dayEventBattleHint,
@@ -364,6 +455,7 @@ export function useBattlePlay(matchId: MaybeRefOrGetter<string>) {
     resultMessage,
     toggleCard,
     playCard,
+    finishTurn,
     onDragStart,
     onDragOver,
     onDropPlay,

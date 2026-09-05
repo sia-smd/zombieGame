@@ -30,6 +30,7 @@ import { images } from '@/assets/images'
 import { playerAvatarUrl } from '@/utils/playerAvatar'
 import { RoomPhase } from '@/types/enums'
 import { sameUserId } from '@/utils/ids'
+import { isE2eHarness } from '@/utils/e2eRoom'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -112,6 +113,7 @@ let lastLobbySyncErrorAt = 0
 
 onMounted(async () => {
   if (!(await bootstrap())) return
+  if (isE2eHarness()) return
   pollTimer = setInterval(async () => {
     if (!sessionToken.value || room.currentPhase !== RoomPhase.Lobby) return
     try {

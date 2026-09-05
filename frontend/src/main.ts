@@ -11,8 +11,6 @@ import { registerAuthFailureHandler } from './services/auth-failure'
 import { registerSW } from 'virtual:pwa-register'
 import './styles/tailwind.css'
 
-registerSW({ immediate: true })
-
 async function bootstrap() {
   const app = createApp(App)
   const pinia = createPinia()
@@ -25,6 +23,15 @@ async function bootstrap() {
   useThemeStore(pinia).init()
   const auth = useAuthStore(pinia)
   const settings = useSettingsStore(pinia)
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      settings.showAppUpdate(async () => {
+        await updateSW(true)
+        window.location.reload()
+      })
+    },
+  })
 
   registerAuthFailureHandler(async () => {
     await auth.clearClientSession()

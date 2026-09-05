@@ -2,6 +2,7 @@ namespace ZombieGame.Application.DTOs.Room;
 
 using ZombieGame.Application.Room;
 using ZombieGame.Domain.Enums;
+using ZombieGame.Domain.Models;
 using ZombieGame.Domain.Models.Room;
 
 public record RoomStateDto(
@@ -31,7 +32,9 @@ public record RoomStateDto(
     WinTeam WinTeam = WinTeam.None,
     RoomMood RoomMood = RoomMood.Safe,
     int SnapshotVersion = 0,
-    int PhaseSecondsRemaining = 0);
+    int PhaseSecondsRemaining = 0,
+    int? NextDayNumber = null,
+    DayEventType? NextDayEvent = null);
 
 /// <summary>
 /// The viewer's own private battle data (hand, health, actions). Only ever populated on
@@ -46,10 +49,12 @@ public record RoomMeDto(
     int ActionsPerTurn,
     int RemainingActions,
     IReadOnlyList<Guid> InventoryCardIds,
+    IReadOnlyList<Guid?> InventorySlots,
     Guid? PairId,
     Guid? OpponentId,
     IReadOnlyList<Guid> PlayedCardIds = null!,
     IReadOnlyList<Guid> OpponentPlayedCardIds = null!,
+    bool MyTurnFinished = false,
     bool OpponentFinished = false,
     bool BattleFinished = false,
     Guid? MyVoteTargetId = null);
@@ -66,7 +71,8 @@ public record RoomPlayerDto(
     bool HasPendingInvitation,
     bool IsResting,
     bool IsDisconnected,
-    RoomPlayerActivity Activity);
+    RoomPlayerActivity Activity,
+    PlayerRole? Role = null);
 
 /// <summary>Public day outcomes — no cards or roles.</summary>
 public record DaySummaryDto(
@@ -113,8 +119,9 @@ public record ChatMessageDto(Guid Id, Guid UserId, string Username, string Text,
 
 public record SendInvitationRequest(Guid TargetUserId);
 public record RespondInvitationRequest(Guid InvitationId, bool Accept);
-public record BattlePlayCardRequest(Guid PairId, Guid CardId, Guid? TargetUserId, string IdempotencyKey);
+public record BattlePlayCardRequest(Guid PairId, Guid CardId, Guid? TargetUserId, string IdempotencyKey, int? InventorySlotIndex = null);
 public record BattlePassRequest(Guid PairId, string IdempotencyKey);
+public record BattleFinishTurnRequest(Guid PairId, string IdempotencyKey);
 public record SendChatRequest(string Text);
 public record CastRoomVoteRequest(Guid TargetUserId, string IdempotencyKey);
 
@@ -141,6 +148,8 @@ public static class RoomStateMapper
                 ? viewerOpponents.ToList()
                 : alive.Where(p => p.UserId != viewerId).Select(p => p.UserId).ToList());
 
+        var revealRoles = room.CurrentPhase == RoomPhase.Finished;
+
         DateTime? botsJoinAt = null;
         if (room.FillWithBots && room.CurrentPhase == RoomPhase.Lobby && room.Players.Count < room.MaxPlayers)
             botsJoinAt = room.CreatedAt.AddSeconds(botFillTimeoutSeconds);
@@ -150,19 +159,28 @@ public static class RoomStateMapper
             room.CurrentPhase,
             room.DayNumber,
             ToUtc(room.PhaseEndsAt),
-            room.Players.Select(p => new RoomPlayerDto(
-                p.UserId,
-                p.Username,
-                string.IsNullOrWhiteSpace(p.ImageId) ? "avatar_default_01" : p.ImageId,
-                p.IsAlive,
-                p.IsBot,
-                p.SeatIndex,
-                room.IsPaired(p.UserId),
-                p.HasSentInvitationToday,
-                room.HasPendingInvitation(p.UserId),
-                p.IsResting,
-                p.IsDisconnected,
-                RoomActivityTracker.GetActivity(room, p))).ToList(),
+            room.Players.Select(p =>
+            {
+                var sessionPlayer = room.Session.GetPlayer(p.UserId);
+                PlayerRole? role = revealRoles && sessionPlayer is not null
+                    ? sessionPlayer.Role
+                    : null;
+
+                return new RoomPlayerDto(
+                    p.UserId,
+                    p.Username,
+                    string.IsNullOrWhiteSpace(p.ImageId) ? "avatar_default_01" : p.ImageId,
+                    p.IsAlive,
+                    p.IsBot,
+                    p.SeatIndex,
+                    room.IsPaired(p.UserId),
+                    p.HasSentInvitationToday,
+                    room.HasPendingInvitation(p.UserId),
+                    p.IsResting,
+                    p.IsDisconnected,
+                    RoomActivityTracker.GetActivity(room, p),
+                    role);
+            }).ToList(),
             room.BattlePairs.Select(p => new BattlePairDto(
                 p.PairId,
                 p.Player1Id,
@@ -201,7 +219,9 @@ public static class RoomStateMapper
             room.WinTeam,
             ComputeRoomMood(room),
             room.SnapshotVersion,
-            SecondsRemaining(room.PhaseEndsAt));
+            SecondsRemaining(room.PhaseEndsAt),
+            room.NextDayNumber,
+            room.NextDayEvent);
     }
 
     internal static DateTime? ToUtc(DateTime? value)
@@ -224,28 +244,47 @@ public static class RoomStateMapper
     }
 
     /// <summary>
-    /// Role-blind tension meter for the room panel / day summary (matches the design gauge).
+    /// Room tension from the current alive population: human vs infected counts and
+    /// how many players remain. Does not reset daily — only changes when roles or
+    /// eliminations change.
     /// </summary>
     public static RoomMood ComputeRoomMood(RoomState room)
     {
-        var total = Math.Max(1, room.Players.Count);
-        var alive = room.AlivePlayers.Count();
-        var aliveRatio = (double)alive / total;
+        if (room.CurrentPhase is RoomPhase.Lobby or RoomPhase.DayStart or RoomPhase.Finished)
+            return RoomMood.Safe;
 
-        var eliminatedToday = room.DaySummary.EliminatedPlayerIds.Count;
-        if (room.LastEliminatedPlayerId is Guid last &&
-            !room.DaySummary.EliminatedPlayerIds.Contains(last))
-            eliminatedToday++;
+        var alive = room.Session.AlivePlayers.ToList();
+        var aliveCount = alive.Count;
+        if (aliveCount == 0)
+            return RoomMood.Safe;
 
-        var infectedToday = room.DaySummary.NewlyInfectedPlayerIds.Count;
-        var pressure = eliminatedToday + infectedToday;
+        var humans = alive.Count(p => p.Role == PlayerRole.Human);
+        var zombies = alive.Count(p => p.IsInfectedTeam);
 
-        if (pressure >= 3 || aliveRatio <= 0.35 || alive <= 2)
+        // Roles not assigned yet (pre-game edge case).
+        if (humans + zombies == 0)
+            return RoomMood.Safe;
+
+        // Critical: infected team equal/ahead, or humans nearly eliminated.
+        if (zombies >= humans || humans <= 1)
             return RoomMood.Critical;
-        if (pressure >= 2 || aliveRatio <= 0.5)
+
+        var zombieRatio = (double)zombies / aliveCount;
+
+        // Danger: infected are a large share, or humans only slightly ahead.
+        if (zombies >= 3 ||
+            zombieRatio >= 0.35 ||
+            humans <= zombies + 2)
             return RoomMood.Danger;
-        if (pressure >= 1 || room.DayNumber >= 3)
+
+        // Suspicious: multiple infected still hidden, human lead shrinking, or heavy attrition.
+        if (zombies >= 2 && humans < zombies * 3)
             return RoomMood.Suspicious;
+
+        var attritionThreshold = (int)Math.Ceiling(room.Players.Count * 0.65);
+        if (aliveCount < Math.Max(4, attritionThreshold))
+            return RoomMood.Suspicious;
+
         return RoomMood.Safe;
     }
 
@@ -257,10 +296,14 @@ public static class RoomStateMapper
 
         var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == viewerId);
         var inventory = new List<Guid>();
-        if (hand?.InventorySlot1 is Guid s1) inventory.Add(s1);
-        if (hand?.InventorySlot2 is Guid s2) inventory.Add(s2);
-        if (hand?.InventorySlot3 is Guid s3) inventory.Add(s3);
-        if (hand?.InventorySlot4 is Guid s4) inventory.Add(s4);
+        var inventorySlots = new List<Guid?>(PlayerHandExtensions.InventorySlotCount);
+        for (var slot = 0; slot < PlayerHandExtensions.InventorySlotCount; slot++)
+        {
+            var cardId = hand?.GetInventorySlot(slot);
+            inventorySlots.Add(cardId);
+            if (cardId is Guid id)
+                inventory.Add(id);
+        }
 
         var pair = room.BattlePairs.FirstOrDefault(p => p.Player1Id == viewerId || p.Player2Id == viewerId);
         Guid? opponentId = pair is null
@@ -271,6 +314,7 @@ public static class RoomStateMapper
 
         IReadOnlyList<Guid> played = Array.Empty<Guid>();
         IReadOnlyList<Guid> opponentPlayed = Array.Empty<Guid>();
+        var myTurnFinished = false;
         var opponentFinished = false;
         var battleFinished = false;
 
@@ -278,6 +322,9 @@ public static class RoomStateMapper
         {
             var isPlayer1 = pair.Player1Id == viewerId;
             played = isPlayer1 ? pair.Player1PlayedCardIds : pair.Player2PlayedCardIds;
+            myTurnFinished = isPlayer1
+                ? pair.BattleSession.Player1Finished
+                : pair.BattleSession.Player2Finished;
             opponentFinished = isPlayer1
                 ? pair.BattleSession.Player2Finished
                 : pair.BattleSession.Player1Finished;
@@ -299,10 +346,12 @@ public static class RoomStateMapper
             sessionPlayer.ActionsPerTurn,
             sessionPlayer.RemainingActions,
             inventory,
+            inventorySlots,
             pair?.PairId,
             opponentId,
             played,
             opponentPlayed,
+            myTurnFinished,
             opponentFinished,
             battleFinished,
             room.Votes.TryGetValue(viewerId, out var votedFor) ? votedFor : null);

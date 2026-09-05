@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { translate } from '@/i18n'
 import { authService } from '@/services/auth.service'
 import { profileService, type CurrentPlayerProfile } from '@/services/profile.service'
-import { tokenStorage } from '@/services/api'
+import { authSession } from '@/services/api'
 import { disconnectAllHubs } from '@/services/signalr'
 import {
   matchSessionStorage,
@@ -19,12 +19,12 @@ export const useAuthStore = defineStore('auth', () => {
   const guestProfile = ref<GuestProfile | null>(null)
   const profile = ref<CurrentPlayerProfile | null>(null)
   const matchSession = ref<MatchSession | null>(matchSessionStorage.read())
-  const accessToken = ref<string | null>(tokenStorage.getAccess())
+  const signedIn = ref(authSession.isSignedIn())
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   let profileLoad: Promise<void> | null = null
 
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => signedIn.value)
   const isGuest = computed(() => (profile.value?.accountType ?? 0) === 0)
   const resolvedUserId = computed(() => userId.value ?? localStorage.getItem('zvh_player_id'))
   const displayName = computed(
@@ -40,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function hydrateFromStorage() {
     if (!userId.value) userId.value = localStorage.getItem('zvh_player_id')
-    accessToken.value = tokenStorage.getAccess()
+    signedIn.value = authSession.isSignedIn()
     matchSession.value = matchSessionStorage.read()
   }
 
@@ -49,14 +49,14 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('zvh_player_id', id)
   }
 
-  function setTokens(access: string, refresh?: string | null) {
-    tokenStorage.set(access, refresh)
-    accessToken.value = access
+  function setTokens(_access?: string | null, _refresh?: string | null) {
+    authSession.markSignedIn()
+    signedIn.value = true
   }
 
   async function initGuest(nickname?: string) {
     hydrateFromStorage()
-    if (accessToken.value) {
+    if (signedIn.value) {
       await loadProfile()
       return
     }
@@ -65,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await authService.registerGuest(nickname)
       setUserId(res.playerId)
-      setTokens(res.accessToken, res.refreshToken)
+      setTokens()
       guestProfile.value = res.profile
       await loadProfile()
     } catch (e) {
@@ -93,7 +93,7 @@ export const useAuthStore = defineStore('auth', () => {
     clearMatchSession()
     setUserId(res.playerId)
     username.value = res.username ?? null
-    setTokens(res.accessToken, res.refreshToken)
+    setTokens()
     guestProfile.value = res.profile
     await loadProfile()
   }
@@ -207,8 +207,8 @@ export const useAuthStore = defineStore('auth', () => {
     useRoomStore().reset()
     useGameStore().reset()
 
-    tokenStorage.clear()
-    accessToken.value = null
+    authSession.clear()
+    signedIn.value = false
     userId.value = null
     username.value = null
     profile.value = null
@@ -232,7 +232,6 @@ export const useAuthStore = defineStore('auth', () => {
     guestProfile,
     profile,
     matchSession,
-    accessToken,
     isLoading,
     error,
     isAuthenticated,

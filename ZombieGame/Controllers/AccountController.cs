@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using ZombieGame.Api.Extensions;
+using ZombieGame.Api.Security;
 using ZombieGame.Application.Common;
 using ZombieGame.Application.DTOs.Account;
 using ZombieGame.Application.Interfaces;
@@ -40,6 +41,12 @@ public class AccountController : ControllerBase
                 request,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 cancellationToken);
+            AuthCookies.Write(
+                HttpContext,
+                response.AccessToken,
+                response.RefreshToken,
+                response.AccessTokenExpiresAt,
+                response.RefreshTokenExpiresAt);
             return Ok(response);
         }
         catch (ServiceException ex)
@@ -58,10 +65,17 @@ public class AccountController : ControllerBase
     {
         try
         {
-            return Ok(await _accountService.LoginAsync(
+            var response = await _accountService.LoginAsync(
                 request,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
-                cancellationToken));
+                cancellationToken);
+            AuthCookies.Write(
+                HttpContext,
+                response.AccessToken,
+                response.RefreshToken,
+                response.AccessTokenExpiresAt,
+                response.RefreshTokenExpiresAt);
+            return Ok(response);
         }
         catch (ServiceException ex)
         {
@@ -136,17 +150,25 @@ public class AccountController : ControllerBase
     [AllowAnonymous]
     [EnableRateLimiting(RateLimitSettings.AuthPolicy)]
     public async Task<ActionResult<RefreshTokenResponse>> RefreshToken(
-        [FromBody] RefreshTokenRequest request,
+        [FromBody] RefreshTokenRequest? request,
         CancellationToken cancellationToken)
     {
         try
         {
             var deviceId = Request.Headers["X-Device-Id"].FirstOrDefault();
-            return Ok(await _accountService.RefreshTokenAsync(
-                request,
+            var refreshToken = request?.RefreshToken ?? AuthCookies.ReadRefreshToken(Request);
+            var response = await _accountService.RefreshTokenAsync(
+                new RefreshTokenRequest(refreshToken),
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 deviceId,
-                cancellationToken));
+                cancellationToken);
+            AuthCookies.Write(
+                HttpContext,
+                response.AccessToken,
+                response.RefreshToken,
+                response.AccessTokenExpiresAt,
+                response.RefreshTokenExpiresAt);
+            return Ok(response);
         }
         catch (ServiceException ex)
         {
@@ -165,12 +187,14 @@ public class AccountController : ControllerBase
         try
         {
             var deviceId = Request.Headers["X-Device-Id"].FirstOrDefault();
-            return Ok(await _accountService.LogoutAsync(
+            var response = await _accountService.LogoutAsync(
                 playerId.Value,
                 User.GetSessionId(),
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
                 deviceId,
-                cancellationToken));
+                cancellationToken);
+            AuthCookies.Clear(HttpContext);
+            return Ok(response);
         }
         catch (ServiceException ex)
         {
@@ -216,12 +240,19 @@ public class AccountController : ControllerBase
 
         try
         {
-            return Ok(await _recoveryService.VerifyRecoverAccountOtpAsync(
+            var response = await _recoveryService.VerifyRecoverAccountOtpAsync(
                 playerId.Value,
                 User.GetSessionId(),
                 request,
                 HttpContext.Connection.RemoteIpAddress?.ToString(),
-                cancellationToken));
+                cancellationToken);
+            AuthCookies.Write(
+                HttpContext,
+                response.AccessToken,
+                response.RefreshToken,
+                response.AccessTokenExpiresAt,
+                response.RefreshTokenExpiresAt);
+            return Ok(response);
         }
         catch (ServiceException ex)
         {

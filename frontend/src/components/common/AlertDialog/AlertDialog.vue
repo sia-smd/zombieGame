@@ -16,17 +16,25 @@ const message = computed(() => settings.alert?.message ?? '')
 const title = computed(() =>
   kind.value === 'connection'
     ? t('dialog.connectionLostTitle')
+    : kind.value === 'update'
+      ? t('dialog.updateTitle')
     : t('dialog.errorTitle'),
 )
 
 const hint = computed(() =>
   kind.value === 'connection'
     ? t('dialog.connectionLost')
+    : kind.value === 'update'
+      ? t('dialog.updateMessage')
     : t('dialog.tryAgain'),
 )
 
 const confirmLabel = computed(() =>
-  kind.value === 'connection' ? t('dialog.retry') : t('common.ok'),
+  kind.value === 'connection'
+    ? t('dialog.retry')
+    : kind.value === 'update'
+      ? t('dialog.reloadNow')
+      : t('common.ok'),
 )
 
 async function onConfirm() {
@@ -48,7 +56,7 @@ async function onConfirm() {
 }
 
 function onClose() {
-  if (kind.value === 'connection') return
+  if (kind.value === 'connection' || kind.value === 'update') return
   settings.closeAlert()
 }
 </script>
@@ -57,7 +65,7 @@ function onClose() {
   <Dialog
     :open="open"
     :title="title"
-    :persistent="kind === 'connection'"
+    :persistent="kind === 'connection' || kind === 'update'"
     @close="onClose"
   >
     <p class="text-body text-text-secondary">
@@ -69,7 +77,7 @@ function onClose() {
 
     <template #actions>
       <Button
-        :variant="kind === 'connection' ? 'primary' : 'danger'"
+        :variant="kind === 'error' ? 'danger' : 'primary'"
         :loading="confirming"
         block
         @click="onConfirm"

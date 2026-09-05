@@ -6,8 +6,9 @@ import {
 } from './auth-failure'
 import { useUiStore } from '@/stores/ui.store'
 
-const STORAGE_ACCESS = 'zvh_access_token'
-const STORAGE_REFRESH = 'zvh_refresh_token'
+const STORAGE_AUTH = 'zvh_auth'
+const LEGACY_ACCESS = 'zvh_access_token'
+const LEGACY_REFRESH = 'zvh_refresh_token'
 
 export function requireConfiguredUrl(value: string | undefined, _name?: string): string {
   return (value ?? '').trim().replace(/\/$/, '')
@@ -35,61 +36,60 @@ function trackWrite(config: InternalAxiosRequestConfig | undefined, delta: 1 | -
   else ui.endWrite()
 }
 
-export const tokenStorage = {
-  getAccess: () => localStorage.getItem(STORAGE_ACCESS),
-  getRefresh: () => localStorage.getItem(STORAGE_REFRESH),
-  set(access: string, refresh?: string | null) {
-    localStorage.setItem(STORAGE_ACCESS, access)
-    if (refresh) {
-      localStorage.setItem(STORAGE_REFRESH, refresh)
-    } else {
-      localStorage.removeItem(STORAGE_REFRESH)
-    }
+/** Signed-in flag only — JWT lives in httpOnly cookies, never in JS storage. */
+export const authSession = {
+  isSignedIn(): boolean {
+    return localStorage.getItem(STORAGE_AUTH) === '1'
+  },
+  markSignedIn() {
+    localStorage.removeItem(LEGACY_ACCESS)
+    localStorage.removeItem(LEGACY_REFRESH)
+    localStorage.setItem(STORAGE_AUTH, '1')
     resetAuthFailureNotification()
   },
   clear() {
-    localStorage.removeItem(STORAGE_ACCESS)
-    localStorage.removeItem(STORAGE_REFRESH)
+    localStorage.removeItem(STORAGE_AUTH)
+    localStorage.removeItem(LEGACY_ACCESS)
+    localStorage.removeItem(LEGACY_REFRESH)
   },
+}
+
+if (typeof localStorage !== 'undefined') {
+  localStorage.removeItem(LEGACY_ACCESS)
+  localStorage.removeItem(LEGACY_REFRESH)
 }
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30_000,
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Token refresh must use the same API origin without going through the
-// authenticated client's 401 interceptor, which would recursively refresh.
 const refreshApi = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30_000,
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = tokenStorage.getAccess()
-  if (token) config.headers.Authorization = `Bearer ${token}`
   trackWrite(config, 1)
   return config
 })
 
-let refreshPromise: Promise<string | null> | null = null
+let refreshPromise: Promise<boolean> | null = null
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refresh = tokenStorage.getRefresh()
-  if (!refresh) return null
+async function refreshAccessToken(): Promise<boolean> {
+  if (!authSession.isSignedIn()) return false
 
   try {
-    const { data } = await refreshApi.post<{
-      accessToken: string
-      refreshToken: string
-    }>('/api/account/refresh-token', { refreshToken: refresh })
-    tokenStorage.set(data.accessToken, data.refreshToken)
-    return data.accessToken
+    await refreshApi.post('/api/account/refresh-token', {})
+    authSession.markSignedIn()
+    return true
   } catch {
-    tokenStorage.clear()
-    return null
+    authSession.clear()
+    return false
   }
 }
 
@@ -109,13 +109,12 @@ api.interceptors.response.use(
     original._retry = true
 
     if (!refreshPromise) refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null })
-    const token = await refreshPromise
-    if (!token) {
+    const ok = await refreshPromise
+    if (!ok) {
       await notifyAuthFailure()
       return Promise.reject(error)
     }
 
-    original.headers.Authorization = `Bearer ${token}`
     return api(original)
   },
 )

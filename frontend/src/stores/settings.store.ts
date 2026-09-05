@@ -5,7 +5,7 @@ import type { ToastVariant } from '@/types/design-tokens'
 import { translate } from '@/i18n'
 import { normalizeAppError } from '@/utils/errors'
 
-export type AlertKind = 'error' | 'connection'
+export type AlertKind = 'error' | 'connection' | 'update'
 
 export type AlertDialogState = {
   open: boolean
@@ -85,6 +85,20 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function showAppUpdate(onReload?: () => void | Promise<void>) {
+    if (alert.value?.open && alert.value.kind === 'update') {
+      if (onReload) alert.value.onConfirm = onReload
+      return
+    }
+
+    alert.value = {
+      open: true,
+      kind: 'update',
+      message: '',
+      onConfirm: onReload ?? null,
+    }
+  }
+
   function closeAlert() {
     alert.value = null
   }
@@ -101,6 +115,7 @@ export const useSettingsStore = defineStore('settings', () => {
     showError,
     reportError,
     showConnectionLost,
+    showAppUpdate,
     closeAlert,
   }
 })

@@ -52,7 +52,7 @@ public record ChangePasswordRequest(string NewPassword, string? CurrentPassword 
 
 public record ChangePasswordResponse(bool Success, string Message);
 
-public record RefreshTokenRequest(string RefreshToken);
+public record RefreshTokenRequest(string? RefreshToken = null);
 
 public record RefreshTokenResponse(
     string AccessToken,

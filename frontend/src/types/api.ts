@@ -214,6 +214,7 @@ export interface RoomPlayerDto {
   isResting: boolean
   isDisconnected: boolean
   activity: RoomPlayerActivity
+  role?: PlayerRole | null
 }
 
 export interface RoomInvitationDto {
@@ -264,6 +265,8 @@ export interface RoomStateDto {
   roomMood?: RoomMood
   snapshotVersion?: number
   phaseSecondsRemaining?: number
+  nextDayNumber?: number | null
+  nextDayEvent?: DayEventType | null
 }
 
 export interface BattleSummaryDto {
@@ -285,10 +288,12 @@ export interface RoomMeDto {
   actionsPerTurn: number
   remainingActions: number
   inventoryCardIds: string[]
+  inventorySlots?: (string | null)[]
   pairId?: string | null
   opponentId?: string | null
   playedCardIds?: string[]
   opponentPlayedCardIds?: string[]
+  myTurnFinished?: boolean
   opponentFinished?: boolean
   battleFinished?: boolean
   myVoteTargetId?: string | null

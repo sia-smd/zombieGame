@@ -5,15 +5,15 @@ defineProps<{
   emptyText: string
   statusText: string
   statusMuted?: boolean
-  cards: Array<{ id: string; image: string; disabled: boolean }>
+  cards: Array<{ slotIndex: number; id: string; image: string; disabled: boolean }>
   emptySlots: number
-  selectedCard: string | null
+  selectedSlot: number | null
   locked: boolean
 }>()
 
 defineEmits<{
-  select: [cardId: string]
-  dragstart: [event: DragEvent, cardId: string]
+  select: [slotIndex: number]
+  dragstart: [event: DragEvent, slotIndex: number]
 }>()
 </script>
 
@@ -25,14 +25,14 @@ defineEmits<{
       <template v-if="cards.length">
         <button
           v-for="card in cards"
-          :key="card.id"
+          :key="`${card.slotIndex}-${card.id}`"
           type="button"
           class="card-slot card-slot--hand"
-          :class="{ 'card-slot--selected': selectedCard === card.id }"
+          :class="{ 'card-slot--selected': selectedSlot === card.slotIndex }"
           :disabled="locked || card.disabled"
           draggable="true"
-          @click="$emit('select', card.id)"
-          @dragstart="$emit('dragstart', $event, card.id)"
+          @click="$emit('select', card.slotIndex)"
+          @dragstart="$emit('dragstart', $event, card.slotIndex)"
         >
           <img :src="card.image" alt="" class="card-img" />
         </button>

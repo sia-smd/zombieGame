@@ -62,7 +62,8 @@ public sealed class CardBattlePhaseHandler : IRoomPhaseHandler
         return command switch
         {
             BattlePlayCardCommand play => await HandlePlayCardAsync(context, play, cancellationToken),
-            BattlePassCommand pass => await HandlePassAsync(context.Room, pass, cancellationToken),
+            BattleFinishTurnCommand finish => await HandleFinishTurnAsync(context, finish, cancellationToken),
+            BattlePassCommand pass => await HandleFinishTurnAsync(context, new BattleFinishTurnCommand(pass.UserId, pass.PairId), cancellationToken),
             _ => RoomTransitionResult.Stay("Invalid command for card battle.")
         };
     }
@@ -70,37 +71,41 @@ public sealed class CardBattlePhaseHandler : IRoomPhaseHandler
     private async Task<RoomTransitionResult> HandlePlayCardAsync(RoomContext context, BattlePlayCardCommand command, CancellationToken cancellationToken)
     {
         var room = context.Room;
-        var battle = await _battles.PlayCardAsync(room, command.PairId, command.UserId, command.CardId, command.TargetUserId, cancellationToken);
+        var battle = await _battles.PlayCardAsync(
+            room,
+            command.PairId,
+            command.UserId,
+            command.CardId,
+            command.TargetUserId,
+            command.InventorySlotIndex,
+            cancellationToken);
         var pair = room.BattlePairs.FirstOrDefault(p => p.PairId == command.PairId)
             ?? throw new ServiceException("Battle is no longer active.");
         await _battles.SyncPairFromBattle(pair, battle);
         await _presenter.PushPrivateToPairAsync(room, command.PairId, cancellationToken);
+        await _presenter.BroadcastAsync(room, cancellationToken);
 
         if (AllPairsFinished(room))
             return RoomTransitionResult.Go(RoomPhase.BattleResult, "All battles finished.");
 
-        // Two actions per battle turn: re-arm the bot if it still has an action point left.
-        if (!RoomBotScheduler.IsBotFinishedInPair(pair, command.UserId))
-        {
-            RoomBotScheduler.ScheduleNextBattleAction(room, command.UserId, context.Settings);
-            return RoomTransitionResult.Stay("Card played. One action left.");
-        }
-
-        return RoomTransitionResult.Stay("Card played.");
+        RoomBotScheduler.ScheduleNextBattleAction(room, command.UserId, context.Settings);
+        return RoomTransitionResult.Stay("Card queued.");
     }
 
-    private async Task<RoomTransitionResult> HandlePassAsync(RoomState room, BattlePassCommand command, CancellationToken cancellationToken)
+    private async Task<RoomTransitionResult> HandleFinishTurnAsync(RoomContext context, BattleFinishTurnCommand command, CancellationToken cancellationToken)
     {
-        var battle = await _battles.PassAsync(room, command.PairId, command.UserId, cancellationToken);
+        var room = context.Room;
+        var battle = await _battles.FinishTurnAsync(room, command.PairId, command.UserId, cancellationToken);
         var pair = room.BattlePairs.FirstOrDefault(p => p.PairId == command.PairId)
             ?? throw new ServiceException("Battle is no longer active.");
         await _battles.SyncPairFromBattle(pair, battle);
         await _presenter.PushPrivateToPairAsync(room, command.PairId, cancellationToken);
+        await _presenter.BroadcastAsync(room, cancellationToken);
 
         if (AllPairsFinished(room))
             return RoomTransitionResult.Go(RoomPhase.BattleResult, "All battles finished.");
 
-        return RoomTransitionResult.Stay("Pass recorded.");
+        return RoomTransitionResult.Stay("Turn finished.");
     }
 
     private RoomTransitionResult HandleReady(RoomState room, Guid userId)

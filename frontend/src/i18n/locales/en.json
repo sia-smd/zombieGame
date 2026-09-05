@@ -61,10 +61,17 @@
   "login": {
     "title": "Welcome, Survivor!",
     "subtitle": "Play as guest — no account needed",
+    "accountToggle": "Log in with account",
+    "accountId": "Username or phone number",
     "username": "Username",
     "password": "Password",
     "nickname": "Enter nickname",
     "playAsGuest": "Continue as Guest",
+    "sendOtp": "Send OTP",
+    "resendOtp": "Resend OTP",
+    "verifyOtp": "Log in",
+    "codePrompt": "Enter the code you received.",
+    "otpSent": "OTP sent successfully.",
     "deviceSavedLocally": "Your device ID is saved locally",
     "termsPrivacy": "Terms & Privacy",
     "invalidCredentials": "Invalid credentials"
@@ -249,6 +256,9 @@
     "yourDeck": "Your Deck",
     "inventory": "Inventory Slots",
     "playCard": "Play Card",
+    "finishTurn": "Finish",
+    "waitingOpponent": "Waiting for opponent to finish…",
+    "pressFinish": "Cards queued — press Finish when ready.",
     "pass": "Pass",
     "waiting": "Waiting...",
     "emptyHand": "No cards to play",
@@ -333,7 +343,10 @@
     "eliminated": "Eliminated",
     "lastBattles": "Last battles",
     "battleLine": "Battle {n}: {a} ({aAction}) vs {b} ({bAction})",
-    "aliveList": "Still alive"
+    "fullRoster": "All players",
+    "colPlayer": "Player",
+    "colRole": "Role",
+    "colStatus": "Status"
   },
   "roomMood": {
     "title": "Room Mood",
@@ -347,10 +360,13 @@
     "battlePrepHint": "Get ready — private battles begin soon.",
     "dayStartTitle": "Day {n}",
     "dayStartHint": "A new day begins.",
-    "nextDayTitle": "Next Day",
-    "nextDayHint": "Starting the next day..."
+    "nextDayTitle": "Day {n}",
+    "nextDayHint": "The next day begins soon."
   },
   "dayEvent": {
+    "normalTitle": "Normal Day",
+    "sunnyTitle": "Sunny Day",
+    "stormTitle": "Storm",
     "normal": "A normal day. Standard combat rules apply.",
     "sunny": "Sunny day. The Power Zombie cannot infect or attack today.",
     "storm": "Storm. Shields block Power Zombie infection. Zombies need two shotgun hits. The Power Zombie cannot be killed by shotgun."
@@ -369,7 +385,9 @@
     "databaseDown": "The database is unavailable",
     "updateRequired": "This version is outdated. Please update the app.",
     "assetsFailed": "Some files failed to load",
-    "sessionFailed": "Could not sign in"
+    "sessionFailed": "Could not sign in",
+    "start": "Start",
+    "loginLink": "Log in with account"
   },
   "profile": {
     "title": "Profile",
@@ -488,7 +506,10 @@
     "tryAgain": "Please try again.",
     "connectionLostTitle": "Connection lost",
     "connectionLost": "Connection to the server was lost.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "updateTitle": "Update ready",
+    "updateMessage": "A new version has been downloaded. Reload now to use the latest files and audio.",
+    "reloadNow": "Reload now"
   },
   "errors": {
     "unexpected": "An unexpected error occurred.",

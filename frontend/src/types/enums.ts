@@ -72,7 +72,7 @@ export enum WinTeam {
   Zombies = 2,
 }
 
-/** Public room tension — mirrors backend RoomMood. */
+/** Public room tension — mirrors backend RoomMood (alive human vs infected counts). */
 export enum RoomMood {
   Safe = 0,
   Suspicious = 1,

@@ -89,8 +89,19 @@ const showDayStartDialog = computed(
 )
 
 const dayEvent = computed(() => room.currentDayEvent)
-const dayEventImage = computed(() => getDayEventPublicImage(dayEvent.value))
-const dayEventFallbackImage = computed(() => getDayEventImage(dayEvent.value))
+const showDayEvent = computed(() => room.currentPhase !== RoomPhase.Lobby)
+const dayEventImage = computed(() => getDayEventImage(dayEvent.value))
+const dayEventFallbackImage = computed(() => getDayEventPublicImage(dayEvent.value))
+const dayEventTitle = computed(() => {
+  switch (dayEvent.value) {
+    case DayEventType.SunnyDay:
+      return t('dayEvent.sunnyTitle')
+    case DayEventType.Storm:
+      return t('dayEvent.stormTitle')
+    default:
+      return t('dayEvent.normalTitle')
+  }
+})
 const dayEventHint = computed(() => {
   switch (dayEvent.value) {
     case DayEventType.SunnyDay:
@@ -176,6 +187,13 @@ async function sendChat(text: string) {
     settings.reportError(e)
   }
 }
+
+function onDayEventImageError(event: Event) {
+  const img = event.target as HTMLImageElement
+  if (dayEventFallbackImage.value && img.src !== dayEventFallbackImage.value) {
+    img.src = dayEventFallbackImage.value
+  }
+}
 </script>
 
 <template>
@@ -210,7 +228,19 @@ async function sendChat(text: string) {
           <p class="room-info__line">
             {{ t('room.code') }}: <span class="room-info__value">{{ roomCode }}</span>
           </p>
-          <p class="room-info__line">{{ t('room.day', { n: room.dayNumber }) }}</p>
+          <div v-if="showDayEvent" class="room-event">
+            <img
+              :src="dayEventImage"
+              :alt="dayEventTitle"
+              class="room-event__art"
+              @error="onDayEventImageError"
+            />
+            <div class="min-w-0 text-start">
+              <p class="room-info__line">{{ t('room.day', { n: room.dayNumber }) }}</p>
+              <p class="room-event__title">{{ dayEventTitle }}</p>
+            </div>
+          </div>
+          <p v-else class="room-info__line">{{ t('room.day', { n: room.dayNumber }) }}</p>
           <p class="room-info__line">
             {{ t('room.phase') }}:
             <span class="room-info__value">{{ roomPhaseLabel(room.currentPhase) }}</span>
@@ -353,6 +383,31 @@ async function sendChat(text: string) {
 
 .room-info__value {
   font-weight: 800;
+  color: rgb(var(--color-game-title-rgb));
+}
+
+.room-event {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.35rem 0 0.15rem;
+  text-align: start;
+}
+
+.room-event__art {
+  width: 3.1rem;
+  height: 3.1rem;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 0.55rem;
+  border: 2px solid rgb(180 130 70 / 0.65);
+  background: rgb(15 8 4 / 0.55);
+}
+
+.room-event__title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
   color: rgb(var(--color-game-title-rgb));
 }
 

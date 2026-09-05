@@ -6,6 +6,8 @@ using ZombieGame.Application.Bots.Cognition;
 using ZombieGame.Application.GameRules;
 using ZombieGame.Application.GameRules.Cards;
 using ZombieGame.Application.Options;
+using ZombieGame.Domain.Cards;
+using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
@@ -15,7 +17,15 @@ public interface IBattleService
 {
     Task<Battle> CreateBattleAsync(RoomState room, Guid playerA, Guid playerB, TimeSpan duration, CancellationToken cancellationToken = default);
     Task StartBattlesForDayAsync(RoomState room, TimeSpan duration, CancellationToken cancellationToken = default);
-    Task<Battle> PlayCardAsync(RoomState room, Guid battleId, Guid userId, Guid cardId, Guid? targetUserId, CancellationToken cancellationToken = default);
+    Task<Battle> PlayCardAsync(
+        RoomState room,
+        Guid battleId,
+        Guid userId,
+        Guid cardId,
+        Guid? targetUserId,
+        int? inventorySlotIndex = null,
+        CancellationToken cancellationToken = default);
+    Task<Battle> FinishTurnAsync(RoomState room, Guid battleId, Guid userId, CancellationToken cancellationToken = default);
     Task<Battle> PassAsync(RoomState room, Guid battleId, Guid userId, CancellationToken cancellationToken = default);
     Task AutoPassExpiredAsync(RoomState room, CancellationToken cancellationToken = default);
     Task SyncPairFromBattle(BattlePair pair, Battle battle);
@@ -28,6 +38,7 @@ public sealed class BattleService : IBattleService
     private readonly IGameRulesEngine _rulesEngine;
     private readonly ICardRegistry _cardRegistry;
     private readonly ICardConsumptionService _consumption;
+    private readonly ICardPlayValidator _cardValidator;
     private readonly RoomSettings _settings;
     private readonly GameSettings _gameSettings;
 
@@ -36,6 +47,7 @@ public sealed class BattleService : IBattleService
         IGameRulesEngine rulesEngine,
         ICardRegistry cardRegistry,
         ICardConsumptionService consumption,
+        ICardPlayValidator cardValidator,
         IOptions<RoomSettings> settings,
         IOptions<GameSettings> gameSettings)
     {
@@ -43,6 +55,7 @@ public sealed class BattleService : IBattleService
         _rulesEngine = rulesEngine;
         _cardRegistry = cardRegistry;
         _consumption = consumption;
+        _cardValidator = cardValidator;
         _settings = settings.Value;
         _gameSettings = gameSettings.Value;
     }
@@ -86,7 +99,6 @@ public sealed class BattleService : IBattleService
 
             battle.Status = BattleAggregateStatus.InProgress;
             battle.BattleEndsAt = endsAt;
-            // Fresh day turn: never inherit finished/pass flags from a reused aggregate.
             battle.PlayerAFinished = false;
             battle.PlayerBFinished = false;
             battle.PlayerAPublicAction = BattlePublicAction.None;
@@ -130,6 +142,7 @@ public sealed class BattleService : IBattleService
         Guid userId,
         Guid cardId,
         Guid? targetUserId,
+        int? inventorySlotIndex = null,
         CancellationToken cancellationToken = default)
     {
         var battle = await RequireBattleAsync(room.MatchId, battleId, userId, cancellationToken);
@@ -139,112 +152,44 @@ public sealed class BattleService : IBattleService
         var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == userId)
             ?? throw new ServiceException("Player hand not found.");
 
-        if (!hand.ContainsCard(cardId))
-            throw new ServiceException("Card not in hand.");
+        ResolveInventorySlot(hand, cardId, inventorySlotIndex, battle, userId);
 
-        // Pass is an inventory card — same turn-ending rules as the old Pass button.
         if (card.EffectKey.Equals("pass", StringComparison.OrdinalIgnoreCase))
-            return await PlayPassCardAsync(room, battle, userId, cardId, cancellationToken);
+            return await QueuePassCardAsync(room, battle, userId, cardId, inventorySlotIndex, cancellationToken);
 
-        // Heal / infect / poison / shotgun hit the battle opponent. Self-cards default to actor.
-        Guid targetId;
-        var effect = card.EffectKey;
-        if (effect.Equals("heal", StringComparison.OrdinalIgnoreCase) ||
-            effect.Equals("shoot", StringComparison.OrdinalIgnoreCase) ||
-            effect.Equals("infect", StringComparison.OrdinalIgnoreCase) ||
-            effect.Equals("zombie_poison", StringComparison.OrdinalIgnoreCase) ||
-            effect.Equals("power_zombie", StringComparison.OrdinalIgnoreCase))
-        {
-            var opponent = battle.PlayerA == userId ? battle.PlayerB : battle.PlayerA;
-            targetId = targetUserId ?? opponent;
-            if (targetId == userId)
-                throw new ServiceException("This card must target the battle opponent.");
-        }
-        else
-        {
-            targetId = targetUserId ?? userId;
-        }
+        var resolvedTarget = ResolveTargetId(battle, userId, card, targetUserId);
+        ValidateQueuedPlay(room, userId, hand, card, resolvedTarget);
 
-        var effectResult = _rulesEngine.PlayCard(room.Session, userId, card, targetId);
-
-        _consumption.ConsumeAfterPlay(hand, card);
-
-        var witnesses = new[] { battle.PlayerA, battle.PlayerB };
-        BotObservationRecorder.OnCardOutcome(
-            room.Session, userId, targetId, effectResult, card.EffectKey, witnesses);
-
-        battle.CardsPlayed.Add(new BattleCardPlay
-        {
-            PlayerId = userId,
-            CardId = cardId,
-            TargetUserId = targetUserId,
-            PlayedAt = DateTime.UtcNow
-        });
+        QueueCardPlay(battle, userId, cardId, inventorySlotIndex, resolvedTarget);
+        ConsumeBattleAction(room, userId);
 
         room.Statistics.TotalCardsPlayed++;
         RecordPlayerAction(room, userId);
         MarkAsActive(room, userId);
-
-        // A turn is two actions: only finish once the action points are spent (or the player died).
-        var actor = room.Session.GetPlayer(userId);
-        if (actor is null || !actor.IsAlive || actor.RemainingActions <= 0)
-            MarkPlayerFinished(battle, userId, BattlePublicAction.Action);
-        else
-            ApplyPublicAction(battle, userId, BattlePublicAction.Action);
+        ApplyPublicAction(battle, userId, BattlePublicAction.Action);
+        // Turn ends only via FinishTurnAsync (or timer/disconnect auto-pass), never when action points hit zero.
 
         await _battleStore.SaveAsync(battle, cancellationToken);
         return battle;
     }
 
-    private async Task<Battle> PlayPassCardAsync(
-        RoomState room,
-        Battle battle,
-        Guid userId,
-        Guid cardId,
-        CancellationToken cancellationToken)
-    {
-        BotObservationRecorder.OnPass(room.Session, userId, new[] { battle.PlayerA, battle.PlayerB });
-
-        var actor = room.Session.GetPlayer(userId);
-        if (actor is not null && actor.IsAlive && actor.RemainingActions > 0)
-            _rulesEngine.PassAction(room.Session, userId);
-
-        battle.CardsPlayed.Add(new BattleCardPlay
-        {
-            PlayerId = userId,
-            CardId = cardId,
-            TargetUserId = userId,
-            PlayedAt = DateTime.UtcNow
-        });
-
-        room.Statistics.TotalCardsPlayed++;
-        RecordPlayerAction(room, userId);
-        MarkAsActive(room, userId);
-        MarkPlayerFinished(battle, userId, BattlePublicAction.Pass);
-        await _battleStore.SaveAsync(battle, cancellationToken);
-        return battle;
-    }
-
-    public async Task<Battle> PassAsync(
+    public async Task<Battle> FinishTurnAsync(
         RoomState room,
         Guid battleId,
         Guid userId,
         CancellationToken cancellationToken = default)
     {
         var battle = await RequireBattleAsync(room.MatchId, battleId, userId, cancellationToken);
-        BotObservationRecorder.OnPass(room.Session, userId, new[] { battle.PlayerA, battle.PlayerB });
-
-        // Passing spends the whole turn, so the remaining action point is burned too.
-        var actor = room.Session.GetPlayer(userId);
-        if (actor is not null && actor.IsAlive && actor.RemainingActions > 0)
-            _rulesEngine.PassAction(room.Session, userId);
-
-        RecordPlayerAction(room, userId);
-        MarkAsActive(room, userId);
-        MarkPlayerFinished(battle, userId, BattlePublicAction.Pass);
-        await _battleStore.SaveAsync(battle, cancellationToken);
+        await CompletePlayerTurnAsync(room, battle, userId, cancellationToken);
         return battle;
     }
+
+    public Task<Battle> PassAsync(
+        RoomState room,
+        Guid battleId,
+        Guid userId,
+        CancellationToken cancellationToken = default) =>
+        FinishTurnAsync(room, battleId, userId, cancellationToken);
 
     public async Task AutoPassExpiredAsync(RoomState room, CancellationToken cancellationToken = default)
     {
@@ -265,19 +210,256 @@ public sealed class BattleService : IBattleService
                 if (!expired && !IsGraceExpired(room, battle, playerId, now))
                     continue;
 
-                AutoPass(room, battle, playerId);
+                await CompletePlayerTurnAsync(room, battle, playerId, cancellationToken);
                 changed = true;
             }
 
-            if (expired)
+            if (expired && !battle.IsFinished)
                 battle.Status = BattleAggregateStatus.Finished;
-            else if (!changed)
+
+            if (!changed && !expired)
                 continue;
 
             await _battleStore.SaveAsync(battle, cancellationToken);
             await SyncPairFromBattle(pair, battle);
         }
     }
+
+    private async Task CompletePlayerTurnAsync(
+        RoomState room,
+        Battle battle,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (HasFinished(battle, userId))
+            return;
+
+        var playedCards = battle.CardsPlayed.Where(c => c.PlayerId == userId).ToList();
+        var action = playedCards.Count > 0 && playedCards.All(c => IsPassCard(c.CardId))
+            ? BattlePublicAction.Pass
+            : playedCards.Count > 0
+                ? BattlePublicAction.Action
+                : BattlePublicAction.Pass;
+
+        MarkPlayerFinished(battle, userId, action);
+        RecordPlayerAction(room, userId);
+        MarkAsActive(room, userId);
+
+        if (battle.IsFinished)
+            await ResolveBattleAsync(room, battle, cancellationToken);
+
+        await _battleStore.SaveAsync(battle, cancellationToken);
+    }
+
+    private async Task ResolveBattleAsync(RoomState room, Battle battle, CancellationToken cancellationToken)
+    {
+        if (battle.CardsPlayed.Count == 0)
+        {
+            battle.Status = BattleAggregateStatus.Finished;
+            return;
+        }
+
+        var indexed = battle.CardsPlayed
+            .Select((play, index) => new { Play = play, Index = index })
+            .ToList();
+
+        var ordered = GameCombatRules.OrderByEffectPriority(
+            indexed,
+            item =>
+            {
+                var card = _cardRegistry.GetById(item.Play.CardId);
+                return card?.EffectKey ?? "pass";
+            },
+            item => item.Index)
+            .Select(item => item.Play)
+            .ToList();
+
+        foreach (var play in ordered)
+        {
+            var actor = room.Session.GetPlayer(play.PlayerId);
+            if (actor is null || !actor.IsAlive)
+                continue;
+
+            var card = _cardRegistry.GetById(play.CardId);
+            if (card is null || IsPassCard(card.Id))
+                continue;
+
+            var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == play.PlayerId);
+            if (hand is null)
+                continue;
+
+            if (play.InventorySlotIndex is int slotIndex)
+            {
+                if (hand.GetInventorySlot(slotIndex) != play.CardId)
+                    continue;
+            }
+            else if (!hand.ContainsCard(play.CardId))
+            {
+                continue;
+            }
+
+            var targetId = play.TargetUserId
+                ?? ResolveTargetId(battle, play.PlayerId, card, null);
+
+            try
+            {
+                var effectResult = _rulesEngine.ApplyCardEffect(room.Session, play.PlayerId, card, targetId);
+                if (play.InventorySlotIndex is int slot)
+                    hand.SetInventorySlot(slot, null);
+                else
+                    _consumption.ConsumeAfterPlay(hand, card);
+
+                var opponent = battle.PlayerA == play.PlayerId ? battle.PlayerB : battle.PlayerA;
+                BotObservationRecorder.OnCardOutcome(
+                    room.Session,
+                    play.PlayerId,
+                    targetId,
+                    effectResult,
+                    card.EffectKey,
+                    new[] { battle.PlayerA, battle.PlayerB, opponent });
+            }
+            catch (ServiceException)
+            {
+                // Card may no longer be valid after earlier effects in the resolution chain.
+            }
+        }
+
+        battle.Status = BattleAggregateStatus.Finished;
+        await _battleStore.SaveAsync(battle, cancellationToken);
+    }
+
+    private async Task<Battle> QueuePassCardAsync(
+        RoomState room,
+        Battle battle,
+        Guid userId,
+        Guid cardId,
+        int? inventorySlotIndex,
+        CancellationToken cancellationToken)
+    {
+        var card = _cardRegistry.GetById(cardId)!;
+        var hand = room.Session.PlayerHands.First(h => h.UserId == userId);
+        ValidateQueuedPlay(room, userId, hand, card, userId);
+
+        QueueCardPlay(battle, userId, cardId, inventorySlotIndex, userId);
+
+        var actor = room.Session.GetPlayer(userId)!;
+        var isFirstAction = GameCombatRules.IsFirstActionOfTurn(actor);
+        ConsumeBattleAction(room, userId);
+        if (isFirstAction)
+            GameCombatRules.CompleteTurnAfterFirstPass(actor);
+
+        room.Statistics.TotalCardsPlayed++;
+        RecordPlayerAction(room, userId);
+        MarkAsActive(room, userId);
+        ApplyPublicAction(battle, userId, BattlePublicAction.Pass);
+
+        await _battleStore.SaveAsync(battle, cancellationToken);
+        return battle;
+    }
+
+    private void ValidateQueuedPlay(
+        RoomState room,
+        Guid userId,
+        PlayerCardState hand,
+        CardDefinition card,
+        Guid targetUserId)
+    {
+        var actor = room.Session.GetPlayer(userId)
+            ?? throw new ServiceException("Player not found.");
+
+        if (!actor.IsAlive)
+            throw new ServiceException("Dead players cannot take actions.");
+
+        if (actor.RemainingActions <= 0)
+            throw new ServiceException("No remaining actions this turn.");
+
+        _cardValidator.ValidateCardPlayable(card.Id);
+        _cardValidator.ValidateCardNotDisabled(hand, card.Id);
+        _cardValidator.ValidateRoleCanPlayCard(actor.Role, card.EffectKey);
+        _cardValidator.ValidateTargetRequired(card.EffectKey, targetUserId, userId);
+    }
+
+    private void QueueCardPlay(
+        Battle battle,
+        Guid userId,
+        Guid cardId,
+        int? inventorySlotIndex,
+        Guid targetUserId)
+    {
+        battle.CardsPlayed.Add(new BattleCardPlay
+        {
+            PlayerId = userId,
+            CardId = cardId,
+            InventorySlotIndex = inventorySlotIndex,
+            TargetUserId = targetUserId,
+            PlayedAt = DateTime.UtcNow
+        });
+    }
+
+    private static Guid ResolveTargetId(Battle battle, Guid userId, CardDefinition card, Guid? targetUserId)
+    {
+        var effect = card.EffectKey;
+        if (effect.Equals("heal", StringComparison.OrdinalIgnoreCase) ||
+            effect.Equals("shoot", StringComparison.OrdinalIgnoreCase) ||
+            effect.Equals("infect", StringComparison.OrdinalIgnoreCase) ||
+            effect.Equals("zombie_poison", StringComparison.OrdinalIgnoreCase) ||
+            effect.Equals("power_zombie", StringComparison.OrdinalIgnoreCase))
+        {
+            var opponent = battle.PlayerA == userId ? battle.PlayerB : battle.PlayerA;
+            var targetId = targetUserId ?? opponent;
+            if (targetId == userId)
+                throw new ServiceException("This card must target the battle opponent.");
+            return targetId;
+        }
+
+        return targetUserId ?? userId;
+    }
+
+    private static void ResolveInventorySlot(
+        PlayerCardState hand,
+        Guid cardId,
+        int? inventorySlotIndex,
+        Battle battle,
+        Guid userId)
+    {
+        if (inventorySlotIndex is int slot)
+        {
+            if (slot is < 0 or >= PlayerHandExtensions.InventorySlotCount)
+                throw new ServiceException("Invalid inventory slot.");
+
+            if (hand.GetInventorySlot(slot) != cardId)
+                throw new ServiceException("Card not in that inventory slot.");
+
+            if (battle.CardsPlayed.Any(c =>
+                    c.PlayerId == userId &&
+                    c.InventorySlotIndex == slot))
+                throw new ServiceException("That inventory slot was already used this battle.");
+            return;
+        }
+
+        if (!hand.ContainsCard(cardId))
+            throw new ServiceException("Card not in hand.");
+
+        if (battle.CardsPlayed.Any(c => c.PlayerId == userId && c.CardId == cardId && c.InventorySlotIndex is null))
+            throw new ServiceException("That card was already queued this battle.");
+    }
+
+    private static void ConsumeBattleAction(RoomState room, Guid userId)
+    {
+        var actor = room.Session.GetPlayer(userId)
+            ?? throw new ServiceException("Player not found.");
+
+        if (!actor.IsAlive)
+            throw new ServiceException("Dead players cannot take actions.");
+
+        if (actor.RemainingActions <= 0)
+            throw new ServiceException("No remaining actions this turn.");
+
+        actor.ActionsUsedThisTurn++;
+    }
+
+    private static bool IsPassCard(Guid cardId) =>
+        cardId == ActionCardCatalog.Pass;
 
     /// <summary>
     /// Auto-pass only after a disconnect that started during this battle.
@@ -294,15 +476,6 @@ public sealed class BattleService : IBattleService
             return false;
 
         return now >= since.AddSeconds(_settings.BattleDisconnectGraceSeconds);
-    }
-
-    private static void AutoPass(RoomState room, Battle battle, Guid playerId)
-    {
-        var actor = room.Session.GetPlayer(playerId);
-        if (actor is not null && actor.IsAlive)
-            GameCombatRules.CompleteTurnAfterFirstPass(actor);
-
-        MarkPlayerFinished(battle, playerId, BattlePublicAction.Pass);
     }
 
     public Task SyncPairFromBattle(BattlePair pair, Battle battle)
@@ -372,7 +545,6 @@ public sealed class BattleService : IBattleService
                 ? battle.PlayerBPublicAction
                 : BattlePublicAction.None;
 
-        // Action+Pass in the same turn is still a public Action.
         if (current == BattlePublicAction.Action && action == BattlePublicAction.Pass)
             return;
 

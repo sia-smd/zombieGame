@@ -17,14 +17,17 @@ const props = defineProps<{ id: string }>()
 const battle = reactive(useBattlePlay(() => props.id))
 
 const inventoryLocked = computed(
-  () => battle.isTurnOver || battle.actionLoading || battle.holdingForReveal,
+  () => battle.myTurnFinished || battle.actionLoading || battle.holdingForReveal,
 )
 
 const inventoryStatus = computed(() => {
-  if (battle.isTurnOver && !battle.showResultBanner) {
-    return { text: battle.t('battle.turnOver'), muted: false }
+  if (battle.myTurnFinished && !battle.showResultBanner) {
+    return { text: battle.t('playBattle.waitingOpponent'), muted: false }
   }
-  if (!battle.isTurnOver) {
+  if (battle.needsFinish) {
+    return { text: battle.t('playBattle.pressFinish'), muted: false }
+  }
+  if (!battle.myTurnFinished) {
     return { text: battle.t('playBattle.dragHint'), muted: true }
   }
   return { text: '', muted: true }
@@ -126,7 +129,7 @@ function opponentSlotSrc(slot: OpponentSlot) {
             :status-muted="inventoryStatus.muted"
             :cards="battle.inventoryCards"
             :empty-slots="battle.emptyHandSlots"
-            :selected-card="battle.selectedCard"
+            :selected-slot="battle.selectedSlot"
             :locked="inventoryLocked"
             @select="battle.toggleCard"
             @dragstart="battle.onDragStart"
@@ -137,10 +140,18 @@ function opponentSlotSrc(slot: OpponentSlot) {
           <button
             type="button"
             class="action-btn action-btn--play"
-            :disabled="!battle.selectedCard || inventoryLocked"
+            :disabled="!battle.selectedCard || inventoryLocked || !battle.canPlayMoreCards"
             @click="battle.playCard()"
           >
             {{ battle.t('playBattle.playCard') }}
+          </button>
+          <button
+            type="button"
+            class="action-btn action-btn--finish"
+            :disabled="battle.myTurnFinished || battle.actionLoading || battle.holdingForReveal"
+            @click="battle.finishTurn()"
+          >
+            {{ battle.t('playBattle.finishTurn') }}
           </button>
         </div>
       </div>

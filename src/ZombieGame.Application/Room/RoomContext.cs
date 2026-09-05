@@ -57,8 +57,14 @@ public interface IRoomCommand { }
 
 public sealed record SendInvitationCommand(Guid FromUserId, Guid TargetUserId) : IRoomCommand;
 public sealed record RespondInvitationCommand(Guid UserId, Guid InvitationId, bool Accept) : IRoomCommand;
-public sealed record BattlePlayCardCommand(Guid UserId, Guid PairId, Guid CardId, Guid? TargetUserId) : IRoomCommand;
+public sealed record BattlePlayCardCommand(
+    Guid UserId,
+    Guid PairId,
+    Guid CardId,
+    Guid? TargetUserId,
+    int? InventorySlotIndex = null) : IRoomCommand;
 public sealed record BattlePassCommand(Guid UserId, Guid PairId) : IRoomCommand;
+public sealed record BattleFinishTurnCommand(Guid UserId, Guid PairId) : IRoomCommand;
 public sealed record SendChatCommand(Guid UserId, string Text) : IRoomCommand;
 public sealed record SendStructuredChatCommand(
     Guid UserId,

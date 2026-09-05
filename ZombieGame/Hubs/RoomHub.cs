@@ -91,7 +91,16 @@ public class RoomHub : Hub
         // private result.State to the room/battle groups — that leaked hands and overwrote
         // the opponent's myBattle with the actor's me.
         await _roomService.PlayCardInBattleAsync(
-            userId, matchId, sessionToken, request.PairId, request.CardId, request.TargetUserId);
+            userId, matchId, sessionToken, request.PairId, request.CardId, request.TargetUserId, request.InventorySlotIndex);
+
+        var privateState = await _roomService.GetPublicStateAsync(userId, matchId, sessionToken);
+        await Clients.Caller.SendAsync("RoomUpdated", privateState);
+    }
+
+    public async Task FinishBattleTurn(Guid matchId, string sessionToken, BattleFinishTurnRequest request)
+    {
+        var userId = GetRequiredUserId();
+        await _roomService.FinishBattleTurnAsync(userId, matchId, sessionToken, request.PairId);
 
         var privateState = await _roomService.GetPublicStateAsync(userId, matchId, sessionToken);
         await Clients.Caller.SendAsync("RoomUpdated", privateState);
@@ -100,7 +109,7 @@ public class RoomHub : Hub
     public async Task PassInBattle(Guid matchId, string sessionToken, BattlePassRequest request)
     {
         var userId = GetRequiredUserId();
-        await _roomService.PassInBattleAsync(userId, matchId, sessionToken, request.PairId);
+        await _roomService.FinishBattleTurnAsync(userId, matchId, sessionToken, request.PairId);
 
         var privateState = await _roomService.GetPublicStateAsync(userId, matchId, sessionToken);
         await Clients.Caller.SendAsync("RoomUpdated", privateState);

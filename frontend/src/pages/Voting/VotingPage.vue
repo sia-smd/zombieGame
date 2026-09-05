@@ -5,6 +5,7 @@ import MobileFrame from '@/components/layout/MobileFrame/MobileFrame.vue'
 import PageBackdrop from '@/components/layout/PageBackdrop/PageBackdrop.vue'
 import WoodPanel from '@/components/layout/WoodPanel/WoodPanel.vue'
 import LoadingOverlay from '@/components/common/LoadingOverlay/LoadingOverlay.vue'
+import PhaseCountdownDialog from '@/components/room/PhaseCountdownDialog/PhaseCountdownDialog.vue'
 import { CheckIcon } from '@heroicons/vue/24/solid'
 import { useRoomStore } from '@/stores/room.store'
 import { useAuthStore } from '@/stores/auth.store'
@@ -12,8 +13,9 @@ import { useSettingsStore } from '@/stores/settings.store'
 import { useMatchPhaseNavigation } from '@/composables/useMatchPhaseNavigation'
 import { useRoomSession } from '@/composables/useRoomSession'
 import { useCountdown } from '@/composables/useAnimation'
+import { useDayEventPresentation } from '@/composables/useDayEventPresentation'
 import { roomService } from '@/services/room.service'
-import { RoomPhase } from '@/types/enums'
+import { DayEventType, RoomPhase } from '@/types/enums'
 import { sameUserId } from '@/utils/ids'
 import { images } from '@/assets/images'
 import { readStoredVote, writeStoredVote } from '@/utils/voteSession'
@@ -69,11 +71,23 @@ const resultPlayers = computed(() => {
     .sort((a, b) => voteCountFor(b.userId) - voteCountFor(a.userId) || a.seatIndex - b.seatIndex)
 })
 
-const { clock } = useCountdown(
+const { clock, secondsLeft } = useCountdown(
   () => room.state?.phaseEndsAt,
   true,
   () => room.state?.phaseSecondsRemaining,
   () => room.snapshotReceivedAt,
+)
+
+const nextDayNumber = computed(
+  () => room.state?.nextDayNumber ?? (isResults.value ? room.dayNumber + 1 : room.dayNumber),
+)
+const nextDayEvent = computed(() => room.state?.nextDayEvent ?? DayEventType.NormalDay)
+const nextDayPresentation = useDayEventPresentation(nextDayEvent)
+const showNextDayDialog = computed(
+  () =>
+    isResults.value &&
+    nextDayNumber.value > 0 &&
+    (secondsLeft.value === null || secondsLeft.value > 0),
 )
 
 const candidates = computed(() =>
@@ -267,6 +281,17 @@ onMounted(async () => {
         </WoodPanel>
       </div>
     </PageBackdrop>
+
+    <PhaseCountdownDialog
+      :open="showNextDayDialog"
+      :title="t('phaseDialog.nextDayTitle', { n: nextDayNumber })"
+      :subtitle="nextDayPresentation.hint.value"
+      :image-src="nextDayPresentation.image.value"
+      :image-fallback-src="nextDayPresentation.fallbackImage.value"
+      :ends-at="room.state?.phaseEndsAt"
+      :remaining-seconds="room.state?.phaseSecondsRemaining"
+      :remaining-synced-at="room.snapshotReceivedAt"
+    />
   </MobileFrame>
 </template>
 

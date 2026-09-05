@@ -6,15 +6,17 @@ import MobileFrame from '@/components/layout/MobileFrame/MobileFrame.vue'
 import PageBackdrop from '@/components/layout/PageBackdrop/PageBackdrop.vue'
 import WoodPanel from '@/components/layout/WoodPanel/WoodPanel.vue'
 import LoadingOverlay from '@/components/common/LoadingOverlay/LoadingOverlay.vue'
-import RoomMoodGauge from '@/components/room/RoomMoodGauge/RoomMoodGauge.vue'
+import RoleBadge from '@/components/battle/RoleBadge/RoleBadge.vue'
 import { useMatchPhaseNavigation } from '@/composables/useMatchPhaseNavigation'
 import { useRoomStore } from '@/stores/room.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import { roomService } from '@/services/room.service'
-import { BattlePublicAction, WinTeam } from '@/types/enums'
+import { BattlePublicAction, PlayerRole, WinTeam } from '@/types/enums'
 import { images } from '@/assets/images'
 import type { BattleSummaryDto } from '@/types/api'
+import { tryApplyE2eRoomState } from '@/utils/e2eRoom'
+import { playerAvatarUrl } from '@/utils/playerAvatar'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -45,6 +47,9 @@ useMatchPhaseNavigation(
 const alivePlayers = computed(() => room.players.filter((p) => p.isAlive))
 const deadCount = computed(() => room.players.filter((p) => !p.isAlive).length)
 const lastBattles = computed(() => room.battleSummaries.slice(-2))
+const rosterPlayers = computed(() =>
+  [...room.players].sort((a, b) => a.seatIndex - b.seatIndex),
+)
 
 const headline = computed(() => {
   if (winner.value === WinTeam.Humans) return t('matchResult.humansWin')
@@ -86,10 +91,19 @@ function battleLine(b: BattleSummaryDto, index: number) {
   })
 }
 
+function hasRevealedRole(role?: PlayerRole | null) {
+  return role !== undefined && role !== null && role !== PlayerRole.Unknown
+}
+
 onMounted(async () => {
   auth.hydrateFromStorage()
   const session = token.value
   if (!session) return
+  if (tryApplyE2eRoomState(room, props.id, session) && winner.value !== WinTeam.None) {
+    auth.clearMatchSession(props.id)
+    void auth.loadProfile()
+    return
+  }
   const hasFinalState =
     room.matchId?.toLowerCase() === props.id.toLowerCase() &&
     room.state?.matchId?.toLowerCase() === props.id.toLowerCase() &&
@@ -137,7 +151,7 @@ function goHome() {
       <div
         class="relative z-10 mx-auto my-auto flex w-full max-w-sm flex-col gap-3 px-4 py-[calc(1rem+var(--safe-top))]"
       >
-        <WoodPanel class="result-board px-4 py-5 text-center">
+        <WoodPanel class="result-board max-h-[calc(100vh-6rem)] overflow-y-auto px-4 py-5 text-center">
           <p class="text-xs font-bold uppercase tracking-widest text-amber-100/70">
             {{ t('matchResult.dayLabel', { n: room.dayNumber }) }}
           </p>
@@ -157,9 +171,39 @@ function goHome() {
             </div>
           </div>
 
-          <div class="mt-4 text-left">
-            <RoomMoodGauge :mood="room.roomMood" />
-          </div>
+          <section v-if="rosterPlayers.length" class="mt-4 text-left">
+            <h2 class="mb-2 text-xs font-extrabold uppercase tracking-wide text-amber-100/80">
+              {{ t('matchResult.fullRoster') }}
+            </h2>
+            <div class="roster-head">
+              <span>{{ t('matchResult.colPlayer') }}</span>
+              <span>{{ t('matchResult.colRole') }}</span>
+              <span>{{ t('matchResult.colStatus') }}</span>
+            </div>
+            <div
+              v-for="player in rosterPlayers"
+              :key="player.userId"
+              class="roster-row"
+              :class="{ 'roster-row--dead': !player.isAlive }"
+            >
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="roster-avatar">
+                  <img :src="playerAvatarUrl(player.imageId)" alt="" class="h-full w-full object-cover" />
+                </div>
+                <span class="truncate text-sm font-bold text-white">{{ player.username }}</span>
+              </div>
+              <div class="flex justify-center">
+                <RoleBadge v-if="hasRevealedRole(player.role)" :role="player.role!" />
+                <span v-else class="text-xs text-amber-100/50">—</span>
+              </div>
+              <span
+                class="text-right text-xs font-extrabold uppercase"
+                :class="player.isAlive ? 'text-green-400' : 'text-red-400'"
+              >
+                {{ player.isAlive ? t('voting.alive') : t('voting.eliminated') }}
+              </span>
+            </div>
+          </section>
 
           <section v-if="lastBattles.length" class="mt-4 text-left">
             <h2 class="mb-2 text-xs font-extrabold uppercase tracking-wide text-amber-100/80">
@@ -172,15 +216,6 @@ function goHome() {
             >
               {{ battleLine(battle, i) }}
             </div>
-          </section>
-
-          <section v-if="alivePlayers.length" class="mt-4 text-left">
-            <h2 class="mb-2 text-xs font-extrabold uppercase tracking-wide text-amber-100/80">
-              {{ t('matchResult.aliveList') }}
-            </h2>
-            <p class="text-sm text-white/85">
-              {{ alivePlayers.map((p) => p.username).join(' · ') }}
-            </p>
           </section>
         </WoodPanel>
 
@@ -226,6 +261,46 @@ function goHome() {
 
 .stat-box strong {
   font-size: 1.15rem;
+}
+
+.roster-head,
+.roster-row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.9fr 0.7fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.roster-head {
+  padding: 0 0.35rem 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(255 226 170 / 0.7);
+}
+
+.roster-row {
+  margin-bottom: 0.4rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.85rem;
+  background: rgb(20 10 6 / 0.55);
+  border: 2px solid rgb(var(--color-game-border-rgb) / 0.7);
+}
+
+.roster-row--dead {
+  border-color: rgb(208 87 79 / 0.75);
+  box-shadow: 0 0 10px rgb(208 87 79 / 0.2);
+}
+
+.roster-avatar {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 2px solid rgb(180 130 70 / 0.8);
+  background: rgb(var(--color-game-input-rgb));
 }
 
 .battle-line {

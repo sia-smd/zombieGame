@@ -1,0 +1,1 @@
+dotnet publish ZombieGame/ZombieGame.csproj -c Release -o ./publish

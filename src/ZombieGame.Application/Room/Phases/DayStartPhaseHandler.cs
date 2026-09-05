@@ -51,6 +51,8 @@ public sealed class DayStartPhaseHandler : IRoomPhaseHandler
             session.WinTeam = WinTeam.None;
             session.CurrentDayEvent = DayEventType.NormalDay;
             session.Metadata["dayEvent"] = session.CurrentDayEvent.ToString();
+            room.NextDayEvent = null;
+            room.NextDayNumber = null;
             _roles.AssignRoles(session, room.Players.Count);
             _dealing.InitializeHands(session);
             ResetActionPoints(session);
@@ -66,8 +68,10 @@ public sealed class DayStartPhaseHandler : IRoomPhaseHandler
             session.TurnNumber = room.DayNumber;
             session.CurrentPhase = GamePhase.Day;
             session.Votes.Clear();
-            session.CurrentDayEvent = _dayEvents.PickRandomEvent();
+            session.CurrentDayEvent = room.NextDayEvent ?? _dayEvents.PickRandomEvent();
             session.Metadata["dayEvent"] = session.CurrentDayEvent.ToString();
+            room.NextDayEvent = null;
+            room.NextDayNumber = null;
             ResetDailyCombat(session);
             ResetActionPoints(session);
             _dealing.ReplenishInventory(session);

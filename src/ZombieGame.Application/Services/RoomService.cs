@@ -159,12 +159,30 @@ public sealed class RoomService : IRoomService
         Guid pairId,
         Guid cardId,
         Guid? targetUserId,
+        int? inventorySlotIndex = null,
         CancellationToken cancellationToken = default)
     {
         await _validator.ValidateBattleCommandAsync(userId, matchId, sessionToken, pairId, cancellationToken);
         var result = await _stateMachine.DispatchAsync(
             matchId,
-            new BattlePlayCardCommand(userId, pairId, cardId, targetUserId),
+            new BattlePlayCardCommand(userId, pairId, cardId, targetUserId, inventorySlotIndex),
+            cancellationToken);
+
+        var room = await _stateMachine.GetStateAsync(matchId, cancellationToken)!;
+        return await OkAsync(userId, room!, result.Message, cancellationToken);
+    }
+
+    public async Task<RoomActionResult> FinishBattleTurnAsync(
+        Guid userId,
+        Guid matchId,
+        string sessionToken,
+        Guid pairId,
+        CancellationToken cancellationToken = default)
+    {
+        await _validator.ValidateBattleCommandAsync(userId, matchId, sessionToken, pairId, cancellationToken);
+        var result = await _stateMachine.DispatchAsync(
+            matchId,
+            new BattleFinishTurnCommand(userId, pairId),
             cancellationToken);
 
         var room = await _stateMachine.GetStateAsync(matchId, cancellationToken)!;
@@ -181,7 +199,7 @@ public sealed class RoomService : IRoomService
         await _validator.ValidateBattleCommandAsync(userId, matchId, sessionToken, pairId, cancellationToken);
         var result = await _stateMachine.DispatchAsync(
             matchId,
-            new BattlePassCommand(userId, pairId),
+            new BattleFinishTurnCommand(userId, pairId),
             cancellationToken);
 
         var room = await _stateMachine.GetStateAsync(matchId, cancellationToken)!;

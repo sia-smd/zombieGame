@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settings.store'
 import { useRoomStore } from '@/stores/room.store'
 import { useUiStore } from '@/stores/ui.store'
 import { applyReducedMotionPreference } from '@/composables/useAnimation'
+import { useGameAudio } from '@/composables/useGameAudio'
 import {
   onHubConnectionStatus,
   type HubName,
@@ -19,6 +20,7 @@ import { createConnectionRecovery } from '@/services/connection-recovery'
 const settings = useSettingsStore()
 const room = useRoomStore()
 const ui = useUiStore()
+useGameAudio()
 let stopListening: (() => void) | null = null
 const connectionRecovery = createConnectionRecovery({
   room,
@@ -40,7 +42,12 @@ function onConnectionStatus(status: HubConnectionStatus, hub: HubName) {
 onMounted(() => {
   applyReducedMotionPreference(settings.reducedMotion)
   stopListening = onHubConnectionStatus(onConnectionStatus)
+  window.addEventListener('zvh-e2e-disconnect', onE2eDisconnect)
 })
+
+function onE2eDisconnect() {
+  settings.showConnectionLost(async () => undefined)
+}
 
 watch(
   () => settings.reducedMotion,
@@ -50,6 +57,7 @@ watch(
 onUnmounted(() => {
   stopListening?.()
   stopListening = null
+  window.removeEventListener('zvh-e2e-disconnect', onE2eDisconnect)
 })
 </script>
 

@@ -194,14 +194,25 @@ public sealed class RoomBotExecutor : IRoomBotExecutor
             {
                 await _stateMachine.DispatchAsync(
                     matchId,
-                    new BattlePlayCardCommand(bot.UserId, pair.PairId, cardPlay.CardId, cardPlay.TargetUserId),
+                    new BattlePlayCardCommand(
+                        bot.UserId,
+                        pair.PairId,
+                        cardPlay.CardId,
+                        cardPlay.TargetUserId,
+                        cardPlay.InventorySlotIndex),
                     cancellationToken);
-                return;
+
+                var actor = room.Session.GetPlayer(bot.UserId);
+                if (actor is not null && actor.RemainingActions > 0)
+                {
+                    RoomBotScheduler.ScheduleNextBattleAction(room, bot.UserId, _settings);
+                    return;
+                }
             }
 
             await _stateMachine.DispatchAsync(
                 matchId,
-                new BattlePassCommand(bot.UserId, pair.PairId),
+                new BattleFinishTurnCommand(bot.UserId, pair.PairId),
                 cancellationToken);
         }
         catch (Exception ex)

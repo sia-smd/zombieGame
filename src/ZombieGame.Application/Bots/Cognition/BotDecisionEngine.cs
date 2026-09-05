@@ -116,7 +116,7 @@ public sealed class BotDecisionEngine
             if (!MeetsRiskThreshold(state, botUserId, card.EffectKey, resolvedTarget, personality, random))
                 continue;
 
-            return new BotCardPlayDecision(cardId, resolvedTarget);
+            return Decision(hand, cardId, resolvedTarget);
         }
 
         return null;
@@ -212,7 +212,7 @@ public sealed class BotDecisionEngine
         if (random.NextDouble() >= attackProb)
             return null;
 
-        return new BotCardPlayDecision(resolvedCardId, resolvedTarget);
+        return Decision(hand, resolvedCardId, resolvedTarget);
     }
 
     private static bool CanInfectedAttackToday(PlayerRole role, DayEventType dayEvent) =>
@@ -337,22 +337,22 @@ public sealed class BotDecisionEngine
                 var shootWeight = shootProb;
                 var pickHeal = random.NextDouble() * (healWeight + shootWeight) < healWeight;
                 return pickHeal
-                    ? new BotCardPlayDecision(healId, targetId)
-                    : new BotCardPlayDecision(shootId, targetId);
+                    ? Decision(hand, healId, targetId)
+                    : Decision(hand, shootId, targetId);
             }
 
-            return new BotCardPlayDecision(shootId, targetId);
+            return Decision(hand, shootId, targetId);
         }
 
         if (healCardId is Guid onlyHealId)
         {
             if (GameCombatRules.CanHealTarget(state.GetPlayer(targetId)!))
-                return new BotCardPlayDecision(onlyHealId, targetId);
+                return Decision(hand, onlyHealId, targetId);
             return null;
         }
 
         if (shootCardId is Guid onlyShootId)
-            return new BotCardPlayDecision(onlyShootId, targetId);
+            return Decision(hand, onlyShootId, targetId);
 
         return null;
     }
@@ -633,4 +633,7 @@ public sealed class BotDecisionEngine
 
         return focus[0].Id;
     }
+
+    private static BotCardPlayDecision Decision(PlayerCardState hand, Guid cardId, Guid? targetUserId) =>
+        new(cardId, targetUserId, hand.FindInventorySlotIndex(cardId));
 }

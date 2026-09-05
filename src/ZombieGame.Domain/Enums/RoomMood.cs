@@ -1,8 +1,9 @@
 namespace ZombieGame.Domain.Enums;
 
 /// <summary>
-/// Public room tension shown to all players (role-blind). Derived from eliminations,
-/// infections, and how many people are still alive — never from hidden roles.
+/// Public room tension shown to all players. Derived from how many players are still
+/// alive and the current human vs infected split — stable across days until someone
+/// dies or converts.
 /// </summary>
 public enum RoomMood
 {

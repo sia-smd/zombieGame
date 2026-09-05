@@ -15,6 +15,11 @@ declare module '*.webp' {
   export default src
 }
 
+declare module '*.mp3' {
+  const src: string
+  export default src
+}
+
 import type { MessageSchema } from '@/i18n'
 import type { SupportedLocale } from '@/i18n/helpers/language'
 
