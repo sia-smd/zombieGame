@@ -41,6 +41,18 @@ public class VoteResultPreviewTests
         Assert.Contains(dto.Players, p => p.Role == PlayerRole.Zombie);
     }
 
+    [Fact]
+    public void Mapper_RevealsRoles_WhenWinTeamSetEvenBeforeFinishedPhase()
+    {
+        var room = BuildVotingRoom(dayNumber: 3);
+        room.CurrentPhase = RoomPhase.BattleResult;
+        room.WinTeam = WinTeam.Zombies;
+
+        var dto = RoomStateMapper.ToPublicDto(room, room.Players[0].UserId);
+
+        Assert.All(dto.Players, p => Assert.NotNull(p.Role));
+    }
+
     private static VoteResultPhaseHandler CreateHandler()
     {
         var dayEvents = new DayEventService(Options.Create(new DayEventOptions()));

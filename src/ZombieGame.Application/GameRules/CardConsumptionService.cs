@@ -6,12 +6,12 @@ using ZombieGame.Domain.Models;
 
 public interface ICardConsumptionService
 {
-    void ConsumeAfterPlay(PlayerCardState hand, CardDefinition card);
+    void ConsumeAfterPlay(PlayerCardState hand, CardDefinition card, int? inventorySlotIndex = null);
 }
 
 public sealed class CardConsumptionService : ICardConsumptionService
 {
-    public void ConsumeAfterPlay(PlayerCardState hand, CardDefinition card)
+    public void ConsumeAfterPlay(PlayerCardState hand, CardDefinition card, int? inventorySlotIndex = null)
     {
         if (RoleCardCatalog.IsRoleCard(card.Id))
             return;
@@ -23,7 +23,11 @@ public sealed class CardConsumptionService : ICardConsumptionService
         if (card.EffectKey.Equals("shield", StringComparison.OrdinalIgnoreCase))
             return;
 
-        hand.ClearInventorySlot(card.Id);
+        if (inventorySlotIndex is int slot)
+            hand.SetInventorySlot(slot, null);
+        else
+            hand.ClearInventorySlot(card.Id);
+
         hand.DisabledCardIds.Remove(card.Id);
     }
 }

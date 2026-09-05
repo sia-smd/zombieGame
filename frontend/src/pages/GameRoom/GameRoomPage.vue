@@ -25,9 +25,9 @@ import { useGameLabels, useLocaleFormat } from '@/composables/useGameLabels'
 import { useMatchPhaseNavigation } from '@/composables/useMatchPhaseNavigation'
 import { useRoomSession } from '@/composables/useRoomSession'
 import { useCountdown } from '@/composables/useAnimation'
-import { DayEventType, RoomPhase } from '@/types/enums'
+import { DayEventType, PlayerRole, RoomPhase } from '@/types/enums'
 import { sameUserId } from '@/utils/ids'
-import { getDayEventImage, getDayEventPublicImage } from '@/utils/imageAssets'
+import { getDayEventImage, getDayEventPublicImage, getRoleImage } from '@/utils/imageAssets'
 import { images } from '@/assets/images'
 
 const props = defineProps<{ id: string }>()
@@ -37,7 +37,7 @@ const room = useRoomStore()
 const auth = useAuthStore()
 const settings = useSettingsStore()
 const { t } = useI18n()
-const { roomPhaseLabel } = useGameLabels()
+const { roomPhaseLabel, roleLabel } = useGameLabels()
 const { formatLocaleNumber } = useLocaleFormat()
 
 type RoomTab = 'players' | 'chat'
@@ -113,6 +113,15 @@ const dayEventHint = computed(() => {
   }
 })
 
+const myRole = computed(() => room.myBattle?.role ?? PlayerRole.Unknown)
+const myRoleImage = computed(() => getRoleImage(myRole.value))
+const myRoleLabel = computed(() =>
+  myRole.value === PlayerRole.Unknown ? t('game.role') : roleLabel(myRole.value),
+)
+const showMyRoleCard = computed(
+  () => showDayEvent.value && myRole.value !== PlayerRole.Unknown,
+)
+
 const hintMessage = computed(() => {
   if (room.currentPhase !== RoomPhase.OpponentSelection) return roomPhaseLabel(room.currentPhase)
   if (incomingInvitation.value) return t('invitation.question')
@@ -129,6 +138,16 @@ onMounted(async () => {
   void auth.loadProfile()
   await bootstrap()
 })
+
+watch(
+  () => room.currentPhase,
+  (phase) => {
+    if (phase === RoomPhase.Discussion) {
+      activeTab.value = 'chat'
+    }
+  },
+  { immediate: true },
+)
 
 watch(phaseSecondsLeft, async (seconds) => {
   if (seconds !== 0) return
@@ -235,10 +254,16 @@ function onDayEventImageError(event: Event) {
               class="room-event__art"
               @error="onDayEventImageError"
             />
-            <div class="min-w-0 text-start">
+            <div class="room-event__meta min-w-0 flex-1">
               <p class="room-info__line">{{ t('room.day', { n: room.dayNumber }) }}</p>
               <p class="room-event__title">{{ dayEventTitle }}</p>
             </div>
+            <img
+              v-if="showMyRoleCard"
+              :src="myRoleImage"
+              :alt="myRoleLabel"
+              class="room-event__art room-event__art--role"
+            />
           </div>
           <p v-else class="room-info__line">{{ t('room.day', { n: room.dayNumber }) }}</p>
           <p class="room-info__line">
@@ -389,19 +414,28 @@ function onDayEventImageError(event: Event) {
 .room-event {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  margin: 0.35rem 0 0.15rem;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.2rem;
   text-align: start;
 }
 
+.room-event__meta {
+  text-align: center;
+}
+
 .room-event__art {
-  width: 3.1rem;
-  height: 3.1rem;
+  width: 3.6rem;
+  height: 5.1rem;
   flex-shrink: 0;
-  object-fit: cover;
-  border-radius: 0.55rem;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 0.45rem;
   border: 2px solid rgb(180 130 70 / 0.65);
   background: rgb(15 8 4 / 0.55);
+}
+
+.room-event__art--role {
+  border-color: rgb(var(--color-game-cta-border-rgb) / 0.55);
 }
 
 .room-event__title {

@@ -168,6 +168,15 @@ export interface MatchSummary {
   name?: string | null
 }
 
+export interface MatchPlayerSummary {
+  userId: string
+  username: string
+  isBot: boolean
+  isAlive: boolean
+  seatIndex: number
+  role: PlayerRole
+}
+
 export interface GamePlayerState {
   userId: string
   username: string

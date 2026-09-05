@@ -100,6 +100,50 @@ public class CardInventoryV2Tests
     }
 
     [Fact]
+    public void ConsumeAfterPlay_KeepsVisitorAndPoisonEvenWithSlotIndex()
+    {
+        var consumption = GameTestBuilder.CreateConsumptionService();
+        var humanHand = new PlayerCardState
+        {
+            UserId = Guid.NewGuid(),
+            RoleCardId = TestCards.Human.Id,
+            InventorySlot1 = ActionCardCatalog.Visitor,
+            InventorySlot2 = ActionCardCatalog.Pass
+        };
+        var zombieHand = new PlayerCardState
+        {
+            UserId = Guid.NewGuid(),
+            RoleCardId = RoleCardCatalog.Infection,
+            InventorySlot1 = ActionCardCatalog.ZombiePoison,
+            InventorySlot2 = ActionCardCatalog.Pass
+        };
+
+        consumption.ConsumeAfterPlay(humanHand, TestCards.HumanAction, inventorySlotIndex: 0);
+        consumption.ConsumeAfterPlay(zombieHand, TestCards.ZombiePoison, inventorySlotIndex: 0);
+
+        Assert.Equal(ActionCardCatalog.Visitor, humanHand.InventorySlot1);
+        Assert.Equal(ActionCardCatalog.ZombiePoison, zombieHand.InventorySlot1);
+    }
+
+    [Fact]
+    public void ConsumeAfterPlay_RemovesShotgunFromSpecificSlot()
+    {
+        var consumption = GameTestBuilder.CreateConsumptionService();
+        var hand = new PlayerCardState
+        {
+            UserId = Guid.NewGuid(),
+            RoleCardId = TestCards.Human.Id,
+            InventorySlot1 = TestCards.Shotgun.Id,
+            InventorySlot2 = TestCards.Shotgun.Id
+        };
+
+        consumption.ConsumeAfterPlay(hand, TestCards.Shotgun, inventorySlotIndex: 1);
+
+        Assert.Equal(TestCards.Shotgun.Id, hand.InventorySlot1);
+        Assert.Null(hand.InventorySlot2);
+    }
+
+    [Fact]
     public void PassDoesNotChangeInventory()
     {
         var settings = new GameSettings { MaxPassActionsPerDay = 0, ActionsPerTurn = 2 };

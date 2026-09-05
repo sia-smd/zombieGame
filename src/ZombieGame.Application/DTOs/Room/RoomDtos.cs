@@ -148,7 +148,8 @@ public static class RoomStateMapper
                 ? viewerOpponents.ToList()
                 : alive.Where(p => p.UserId != viewerId).Select(p => p.UserId).ToList());
 
-        var revealRoles = room.CurrentPhase == RoomPhase.Finished;
+        var revealRoles = room.CurrentPhase == RoomPhase.Finished
+            || room.WinTeam is WinTeam.Humans or WinTeam.Zombies;
 
         DateTime? botsJoinAt = null;
         if (room.FillWithBots && room.CurrentPhase == RoomPhase.Lobby && room.Players.Count < room.MaxPlayers)

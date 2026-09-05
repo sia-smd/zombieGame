@@ -371,12 +371,31 @@ public sealed class RoomStateMachine : IRoomStateMachine
         if (enterResult.Advanced && enterResult.NextPhase is RoomPhase chained)
             return await TransitionToAsync(room, chained, cancellationToken);
 
+        // Persist MatchPlayer roles before the final broadcast/teardown so the end-report
+        // API has roles even if a client misses the Finished RoomUpdated payload.
+        if (nextPhase == RoomPhase.Finished)
+            await _lifecycle.OnMatchFinishedAsync(room, cancellationToken);
+
         await BroadcastStateAsync(room, cancellationToken);
 
         if (nextPhase == RoomPhase.Finished)
-            await FinalizeRoomAsync(room, cancellationToken);
+            await CleanupAfterFinishedAsync(room, cancellationToken);
 
         return enterResult;
+    }
+
+    private async Task CleanupAfterFinishedAsync(RoomState room, CancellationToken cancellationToken)
+    {
+        await CleanupRoomAsync(room.MatchId, cancellationToken);
+        await _activeMatches.UnregisterAsync(room.MatchId, cancellationToken);
+        await _store.RemoveAsync(room.MatchId, cancellationToken);
+        _logger.LogInformation("Room {MatchId} cleaned up after finish.", room.MatchId);
+    }
+
+    private async Task FinalizeRoomAsync(RoomState room, CancellationToken cancellationToken)
+    {
+        await _lifecycle.OnMatchFinishedAsync(room, cancellationToken);
+        await CleanupAfterFinishedAsync(room, cancellationToken);
     }
 
     /// <summary>A broken client connection must never stop the room loop.</summary>
@@ -399,16 +418,6 @@ public sealed class RoomStateMachine : IRoomStateMachine
         await _battles.RemoveMatchAsync(matchId, cancellationToken);
         await _snapshots.RemoveMatchAsync(matchId, cancellationToken);
         await _eventLog.RemoveMatchAsync(matchId, cancellationToken);
-    }
-
-    private async Task FinalizeRoomAsync(RoomState room, CancellationToken cancellationToken)
-    {
-        await _lifecycle.OnMatchFinishedAsync(room, cancellationToken);
-        await CleanupRoomAsync(room.MatchId, cancellationToken);
-        await _activeMatches.UnregisterAsync(room.MatchId, cancellationToken);
-        // Remove the terminal room last so any failure above remains retryable.
-        await _store.RemoveAsync(room.MatchId, cancellationToken);
-        _logger.LogInformation("Room {MatchId} cleaned up after finish.", room.MatchId);
     }
 
     private RoomContext BuildContext(RoomState room) =>

@@ -12,11 +12,13 @@ import { useRoomStore } from '@/stores/room.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import { roomService } from '@/services/room.service'
+import { gameService } from '@/services/game.service'
 import { BattlePublicAction, PlayerRole, WinTeam } from '@/types/enums'
 import { images } from '@/assets/images'
-import type { BattleSummaryDto } from '@/types/api'
+import type { BattleSummaryDto, RoomPlayerDto } from '@/types/api'
 import { tryApplyE2eRoomState } from '@/utils/e2eRoom'
 import { playerAvatarUrl } from '@/utils/playerAvatar'
+import { sameUserId } from '@/utils/ids'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -43,6 +45,9 @@ useMatchPhaseNavigation(
   () => props.id,
   () => liveNavReady.value && winner.value === WinTeam.None,
 )
+
+/** Roles from GET /matches/{id}/players — survives room teardown. */
+const persistedRoles = ref<Record<string, PlayerRole>>({})
 
 const alivePlayers = computed(() => room.players.filter((p) => p.isAlive))
 const deadCount = computed(() => room.players.filter((p) => !p.isAlive).length)
@@ -95,21 +100,52 @@ function hasRevealedRole(role?: PlayerRole | null) {
   return role !== undefined && role !== null && role !== PlayerRole.Unknown
 }
 
+function roleFor(player: RoomPlayerDto): PlayerRole | null {
+  if (hasRevealedRole(player.role)) return player.role!
+  const key = Object.keys(persistedRoles.value).find((id) => sameUserId(id, player.userId))
+  if (!key) return null
+  const role = persistedRoles.value[key]
+  return hasRevealedRole(role) ? role : null
+}
+
+async function loadPersistedRoles(retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const players = await gameService.getMatchPlayers(props.id)
+      const next: Record<string, PlayerRole> = {}
+      for (const p of players) {
+        if (hasRevealedRole(p.role)) next[p.userId] = p.role
+      }
+      persistedRoles.value = next
+      if (Object.keys(next).length > 0) return
+    } catch {
+      // room may finish a moment before MatchPlayer.Role is persisted
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
+  }
+}
+
 onMounted(async () => {
   auth.hydrateFromStorage()
   const session = token.value
-  if (!session) return
+  if (!session) {
+    await loadPersistedRoles()
+    return
+  }
   if (tryApplyE2eRoomState(room, props.id, session) && winner.value !== WinTeam.None) {
     auth.clearMatchSession(props.id)
     void auth.loadProfile()
+    await loadPersistedRoles()
     return
   }
+
+  const rosterHasRoles = room.players.some((p) => hasRevealedRole(p.role))
   const hasFinalState =
     room.matchId?.toLowerCase() === props.id.toLowerCase() &&
     room.state?.matchId?.toLowerCase() === props.id.toLowerCase() &&
     winner.value !== WinTeam.None
 
-  if (hasFinalState) {
+  if (hasFinalState && rosterHasRoles) {
     auth.clearMatchSession(props.id)
     void auth.loadProfile()
     return
@@ -119,9 +155,10 @@ onMounted(async () => {
     if (room.matchId !== props.id || room.state?.matchId !== props.id) {
       await room.resume(props.id, session)
     }
-    await roomService.syncRoom(props.id, session)
+    await roomService.syncRoom(props.id, session).catch(() => undefined)
     if (winner.value === WinTeam.None) {
       liveNavReady.value = true
+      await loadPersistedRoles()
       return
     }
     auth.clearMatchSession(props.id)
@@ -129,6 +166,8 @@ onMounted(async () => {
   } catch (error: unknown) {
     settings.reportError(error)
   }
+
+  await loadPersistedRoles()
 })
 
 function goHome() {
@@ -193,7 +232,7 @@ function goHome() {
                 <span class="truncate text-sm font-bold text-white">{{ player.username }}</span>
               </div>
               <div class="flex justify-center">
-                <RoleBadge v-if="hasRevealedRole(player.role)" :role="player.role!" />
+                <RoleBadge v-if="roleFor(player) !== null" :role="roleFor(player)!" />
                 <span v-else class="text-xs text-amber-100/50">—</span>
               </div>
               <span

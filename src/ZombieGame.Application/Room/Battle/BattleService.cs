@@ -304,10 +304,7 @@ public sealed class BattleService : IBattleService
             try
             {
                 var effectResult = _rulesEngine.ApplyCardEffect(room.Session, play.PlayerId, card, targetId);
-                if (play.InventorySlotIndex is int slot)
-                    hand.SetInventorySlot(slot, null);
-                else
-                    _consumption.ConsumeAfterPlay(hand, card);
+                _consumption.ConsumeAfterPlay(hand, card, play.InventorySlotIndex);
 
                 var opponent = battle.PlayerA == play.PlayerId ? battle.PlayerB : battle.PlayerA;
                 BotObservationRecorder.OnCardOutcome(
