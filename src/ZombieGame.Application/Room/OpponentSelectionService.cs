@@ -73,6 +73,22 @@ public sealed class OpponentSelectionService
         };
     }
 
+    /// <summary>
+    /// At phase close: if exactly two alive players are still unpaired, pair them
+    /// automatically (human or bot). A single leftover rests; 3+ unmatched stay unpaired.
+    /// </summary>
+    public BattlePair? TryPairLastTwoUnmatched(RoomState room)
+    {
+        var unmatched = GetUnmatchedPlayers(room);
+        if (unmatched.Count != 2)
+            return null;
+
+        ExpirePendingInvitationsInvolving(room, unmatched);
+        var pair = CreatePair(unmatched[0], unmatched[1]);
+        room.BattlePairs.Add(pair);
+        return pair;
+    }
+
     public bool AllAlivePlayersPaired(RoomState room)
     {
         var alive = room.AlivePlayers.ToList();
@@ -87,4 +103,19 @@ public sealed class OpponentSelectionService
 
     public IReadOnlyList<Guid> GetUnmatchedPlayers(RoomState room) =>
         room.AlivePlayers.Where(p => !room.IsPaired(p.UserId)).Select(p => p.UserId).ToList();
+
+    private static void ExpirePendingInvitationsInvolving(RoomState room, IReadOnlyList<Guid> playerIds)
+    {
+        var involved = playerIds.ToHashSet();
+        foreach (var invitation in room.PendingInvitations.Where(i => i.Status == BattleInvitationStatus.Pending))
+        {
+            if (!involved.Contains(invitation.FromUserId) && !involved.Contains(invitation.ToUserId))
+                continue;
+
+            invitation.Status = BattleInvitationStatus.Expired;
+            var sender = room.GetPlayer(invitation.FromUserId);
+            if (sender is not null && !room.IsPaired(sender.UserId))
+                sender.HasSentInvitationToday = false;
+        }
+    }
 }

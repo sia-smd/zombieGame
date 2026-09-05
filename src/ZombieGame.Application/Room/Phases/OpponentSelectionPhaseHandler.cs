@@ -239,6 +239,19 @@ public sealed class OpponentSelectionPhaseHandler : IRoomPhaseHandler
     private async Task FinalizeUnmatchedAsync(RoomContext context, CancellationToken cancellationToken)
     {
         var room = context.Room;
+
+        // Exactly two unmatched (bots or humans): force a battle instead of both resting.
+        var autoPair = _opponentSelection.TryPairLastTwoUnmatched(room);
+        if (autoPair is not null)
+        {
+            await context.History.RecordPairAsync(
+                room.MatchId,
+                autoPair.Player1Id,
+                autoPair.Player2Id,
+                cancellationToken);
+            return;
+        }
+
         var unmatched = _opponentSelection.GetUnmatchedPlayers(room);
         if (unmatched.Count != 1)
             return;
@@ -276,7 +289,7 @@ public sealed class OpponentSelectionPhaseHandler : IRoomPhaseHandler
 
             case UnmatchedPlayerRule.Skip:
             default:
-                // Rest Mode assigned by AssignRestingPlayers after finalize.
+                // Single leftover rests (AssignRestingPlayers after finalize).
                 break;
         }
     }

@@ -113,6 +113,14 @@ Under `IRoomLock` (already held by `RoomStateMachine`):
    - Create Battle aggregate + BattlePair reference
    - Prevent duplicate pairs (check `room.IsPaired`)
 
+## Opponent selection finalize (unmatched)
+
+When OpponentSelection closes (timer or all unpaired ready):
+
+1. **Exactly 2 unmatched** (human or bot): auto-pair them (`TryPairLastTwoUnmatched`), expire pending invites involving them, record history. Neither rests.
+2. **Exactly 1 unmatched**: Rest Mode (default `UnmatchedPlayerRule.Skip`). Natural odd leftover.
+3. **3+ unmatched**: no auto-pair; all of them rest for the day.
+
 ## Ready System
 
 `RoomState.PhaseReadyPlayers: HashSet<Guid>`

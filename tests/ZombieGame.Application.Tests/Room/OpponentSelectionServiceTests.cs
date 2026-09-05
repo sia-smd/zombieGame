@@ -44,6 +44,62 @@ public class OpponentSelectionServiceTests
         Assert.Contains(p2, available);
     }
 
+    [Fact]
+    public void TryPairLastTwoUnmatched_PairsExactlyTwoUnmatchedPlayers()
+    {
+        var service = new OpponentSelectionService();
+        var p1 = Guid.NewGuid();
+        var p2 = Guid.NewGuid();
+        var room = BuildRoom(p1, p2);
+        room.Players[0].IsBot = true;
+        room.Players[1].IsBot = true;
+        room.PendingInvitations.Add(new BattleInvitation
+        {
+            Id = Guid.NewGuid(),
+            FromUserId = p1,
+            ToUserId = p2,
+            Status = BattleInvitationStatus.Pending,
+            SentAt = DateTime.UtcNow
+        });
+
+        var pair = service.TryPairLastTwoUnmatched(room);
+
+        Assert.NotNull(pair);
+        Assert.True(room.IsPaired(p1));
+        Assert.True(room.IsPaired(p2));
+        Assert.Equal(BattleInvitationStatus.Expired, room.PendingInvitations[0].Status);
+        Assert.Empty(service.GetUnmatchedPlayers(room));
+    }
+
+    [Fact]
+    public void TryPairLastTwoUnmatched_LeavesSinglePlayerUnmatched()
+    {
+        var service = new OpponentSelectionService();
+        var p1 = Guid.NewGuid();
+        var p2 = Guid.NewGuid();
+        var p3 = Guid.NewGuid();
+        var room = BuildRoom(p1, p2, p3);
+        room.BattlePairs.Add(service.CreatePair(p1, p2));
+
+        var pair = service.TryPairLastTwoUnmatched(room);
+
+        Assert.Null(pair);
+        Assert.False(room.IsPaired(p3));
+        Assert.Equal(new[] { p3 }, service.GetUnmatchedPlayers(room));
+    }
+
+    [Fact]
+    public void TryPairLastTwoUnmatched_DoesNotPairThreeOrMore()
+    {
+        var service = new OpponentSelectionService();
+        var room = BuildRoom(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+
+        var pair = service.TryPairLastTwoUnmatched(room);
+
+        Assert.Null(pair);
+        Assert.Equal(3, service.GetUnmatchedPlayers(room).Count);
+    }
+
     private static RoomState BuildRoom(params Guid[] playerIds)
     {
         var room = new RoomState

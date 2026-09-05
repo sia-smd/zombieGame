@@ -47,7 +47,7 @@ public sealed class BattlePreparationPhaseHandler : IRoomPhaseHandler
     public Task<RoomTransitionResult> HandleAsync(RoomContext context, IRoomCommand command, CancellationToken cancellationToken = default) =>
         Task.FromResult(RoomTransitionResult.Stay("Battles are being prepared."));
 
-    /// <summary>Every unpaired alive player rests today (odd leftover or timer left them unpaired).</summary>
+    /// <summary>Every unpaired alive player rests today (normally the odd leftover after auto-pairing a final duo).</summary>
     public static void AssignRestingPlayers(RoomState room)
     {
         foreach (var player in room.Players)
