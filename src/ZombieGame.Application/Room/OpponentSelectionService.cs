@@ -74,19 +74,33 @@ public sealed class OpponentSelectionService
     }
 
     /// <summary>
-    /// At phase close: if exactly two alive players are still unpaired, pair them
-    /// automatically (human or bot). A single leftover rests; 3+ unmatched stay unpaired.
+    /// At phase close: pair every leftover unmatched alive player into random 1v1s.
+    /// At most one player rests (odd leftover). Works for bots and humans alike.
     /// </summary>
-    public BattlePair? TryPairLastTwoUnmatched(RoomState room)
+    public IReadOnlyList<BattlePair> PairAllUnmatched(RoomState room)
     {
-        var unmatched = GetUnmatchedPlayers(room);
-        if (unmatched.Count != 2)
-            return null;
+        var unmatched = GetUnmatchedPlayers(room).ToList();
+        if (unmatched.Count < 2)
+            return Array.Empty<BattlePair>();
 
         ExpirePendingInvitationsInvolving(room, unmatched);
-        var pair = CreatePair(unmatched[0], unmatched[1]);
-        room.BattlePairs.Add(pair);
-        return pair;
+
+        // Fisher–Yates so leftover resting is not always the same seat order.
+        for (var i = unmatched.Count - 1; i > 0; i--)
+        {
+            var j = Random.Shared.Next(i + 1);
+            (unmatched[i], unmatched[j]) = (unmatched[j], unmatched[i]);
+        }
+
+        var created = new List<BattlePair>();
+        for (var i = 0; i + 1 < unmatched.Count; i += 2)
+        {
+            var pair = CreatePair(unmatched[i], unmatched[i + 1]);
+            room.BattlePairs.Add(pair);
+            created.Add(pair);
+        }
+
+        return created;
     }
 
     public bool AllAlivePlayersPaired(RoomState room)

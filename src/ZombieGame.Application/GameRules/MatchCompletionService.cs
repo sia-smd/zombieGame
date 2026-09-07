@@ -44,6 +44,8 @@ public sealed class MatchCompletionService : IMatchCompletionService
         match.Status = MatchStatus.Finished;
         match.FinishedAt = DateTime.UtcNow;
         match.CurrentPhase = GamePhase.Resolution;
+        match.WinningTeam = winningTeam;
+        match.TotalDays = Math.Max(1, state.TurnNumber);
         match.WinnerUserId = state.Players.FirstOrDefault(p => IsOnTeam(p.Role, winningTeam))?.UserId;
 
         foreach (var sessionPlayer in state.Players)

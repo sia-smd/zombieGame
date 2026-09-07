@@ -45,7 +45,7 @@ public class OpponentSelectionServiceTests
     }
 
     [Fact]
-    public void TryPairLastTwoUnmatched_PairsExactlyTwoUnmatchedPlayers()
+    public void PairAllUnmatched_PairsExactlyTwoUnmatchedPlayers()
     {
         var service = new OpponentSelectionService();
         var p1 = Guid.NewGuid();
@@ -62,9 +62,9 @@ public class OpponentSelectionServiceTests
             SentAt = DateTime.UtcNow
         });
 
-        var pair = service.TryPairLastTwoUnmatched(room);
+        var pairs = service.PairAllUnmatched(room);
 
-        Assert.NotNull(pair);
+        Assert.Single(pairs);
         Assert.True(room.IsPaired(p1));
         Assert.True(room.IsPaired(p2));
         Assert.Equal(BattleInvitationStatus.Expired, room.PendingInvitations[0].Status);
@@ -72,7 +72,7 @@ public class OpponentSelectionServiceTests
     }
 
     [Fact]
-    public void TryPairLastTwoUnmatched_LeavesSinglePlayerUnmatched()
+    public void PairAllUnmatched_LeavesSinglePlayerUnmatched()
     {
         var service = new OpponentSelectionService();
         var p1 = Guid.NewGuid();
@@ -81,23 +81,40 @@ public class OpponentSelectionServiceTests
         var room = BuildRoom(p1, p2, p3);
         room.BattlePairs.Add(service.CreatePair(p1, p2));
 
-        var pair = service.TryPairLastTwoUnmatched(room);
+        var pairs = service.PairAllUnmatched(room);
 
-        Assert.Null(pair);
+        Assert.Empty(pairs);
         Assert.False(room.IsPaired(p3));
         Assert.Equal(new[] { p3 }, service.GetUnmatchedPlayers(room));
     }
 
     [Fact]
-    public void TryPairLastTwoUnmatched_DoesNotPairThreeOrMore()
+    public void PairAllUnmatched_PairsFourUnmatchedIntoTwoBattles()
+    {
+        var service = new OpponentSelectionService();
+        var pairedA = Guid.NewGuid();
+        var pairedB = Guid.NewGuid();
+        var unmatched = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        var room = BuildRoom(new[] { pairedA, pairedB }.Concat(unmatched).ToArray());
+        room.BattlePairs.Add(service.CreatePair(pairedA, pairedB));
+
+        var pairs = service.PairAllUnmatched(room);
+
+        Assert.Equal(2, pairs.Count);
+        Assert.All(unmatched, id => Assert.True(room.IsPaired(id)));
+        Assert.Empty(service.GetUnmatchedPlayers(room));
+    }
+
+    [Fact]
+    public void PairAllUnmatched_LeavesOneRestingWhenOdd()
     {
         var service = new OpponentSelectionService();
         var room = BuildRoom(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
 
-        var pair = service.TryPairLastTwoUnmatched(room);
+        var pairs = service.PairAllUnmatched(room);
 
-        Assert.Null(pair);
-        Assert.Equal(3, service.GetUnmatchedPlayers(room).Count);
+        Assert.Single(pairs);
+        Assert.Single(service.GetUnmatchedPlayers(room));
     }
 
     private static RoomState BuildRoom(params Guid[] playerIds)

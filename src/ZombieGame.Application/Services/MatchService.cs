@@ -9,11 +9,16 @@ public class MatchService : IMatchService
 {
     private readonly IMatchRepository _matchRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IMatchSummaryStore _summaryStore;
 
-    public MatchService(IMatchRepository matchRepository, IUserRepository userRepository)
+    public MatchService(
+        IMatchRepository matchRepository,
+        IUserRepository userRepository,
+        IMatchSummaryStore summaryStore)
     {
         _matchRepository = matchRepository;
         _userRepository = userRepository;
+        _summaryStore = summaryStore;
     }
 
     public async Task<MatchSummaryResponse?> GetMatchAsync(
@@ -25,6 +30,12 @@ public class MatchService : IMatchService
         if (match is null || !match.Players.Any(player => player.UserId == requesterId))
             return null;
 
+        var summary = await _summaryStore.GetAsync(matchId, cancellationToken);
+        var totalDays = match.TotalDays > 0 ? match.TotalDays : summary?.TotalDays ?? 0;
+        var winningTeam = match.WinningTeam != WinTeam.None
+            ? match.WinningTeam
+            : summary?.WinningTeam ?? WinTeam.None;
+
         return new MatchSummaryResponse(
             match.Id,
             match.Status,
@@ -32,10 +43,21 @@ public class MatchService : IMatchService
             match.Players.Count,
             match.MaxPlayers,
             match.CreatedAt,
-            match.Name);
+            match.Name,
+            winningTeam,
+            totalDays);
     }
 
     public async Task<IReadOnlyList<MatchPlayerResponse>?> GetMatchPlayersAsync(
+        Guid requesterId,
+        Guid matchId,
+        CancellationToken cancellationToken = default)
+    {
+        var report = await GetMatchResultAsync(requesterId, matchId, cancellationToken);
+        return report?.Players;
+    }
+
+    public async Task<MatchResultReportDto?> GetMatchResultAsync(
         Guid requesterId,
         Guid matchId,
         CancellationToken cancellationToken = default)
@@ -44,22 +66,35 @@ public class MatchService : IMatchService
         if (match is null || !match.Players.Any(player => player.UserId == requesterId))
             return null;
 
-        var responses = new List<MatchPlayerResponse>();
-        var revealRoles = match.Status == MatchStatus.Finished;
+        var summary = await _summaryStore.GetAsync(matchId, cancellationToken);
+        var totalDays = match.TotalDays > 0 ? match.TotalDays : summary?.TotalDays ?? 0;
+        var winningTeam = match.WinningTeam != WinTeam.None
+            ? match.WinningTeam
+            : summary?.WinningTeam ?? WinTeam.None;
+
+        var revealRoles = match.Status == MatchStatus.Finished || winningTeam != WinTeam.None;
+        var players = new List<MatchPlayerResponse>();
         foreach (var player in match.Players.OrderBy(p => p.SeatIndex))
         {
             var user = await _userRepository.GetByIdAsync(player.UserId, cancellationToken);
-            responses.Add(new MatchPlayerResponse(
+            var role = revealRoles || player.UserId == requesterId
+                ? player.Role
+                : PlayerRole.Unknown;
+
+            players.Add(new MatchPlayerResponse(
                 player.UserId,
                 user?.Username ?? "Unknown",
                 player.IsBot,
                 player.IsAlive,
                 player.SeatIndex,
-                revealRoles || player.UserId == requesterId
-                    ? player.Role
-                    : PlayerRole.Unknown));
+                role));
         }
 
-        return responses;
+        return new MatchResultReportDto(
+            match.Id,
+            match.Status,
+            winningTeam,
+            totalDays,
+            players);
     }
 }

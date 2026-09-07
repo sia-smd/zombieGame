@@ -44,12 +44,18 @@ export const useRoomStore = defineStore('room', () => {
   // so it is kept apart from `state` to survive those null-me updates.
   const myBattle = ref<RoomMeDto | null>(null)
   const winTeam = ref<WinTeam>(WinTeam.None)
+  /** Last known positive day — survives lost Finished snapshots that arrive as day 0. */
+  const endedDayNumber = ref(0)
   const snapshotReceivedAt = ref(0)
   const lastSyncError = ref<string | null>(null)
 
   const players = computed(() => state.value?.players ?? [])
   const currentPhase = computed(() => state.value?.currentPhase ?? RoomPhase.Lobby)
-  const dayNumber = computed(() => state.value?.dayNumber ?? 0)
+  const dayNumber = computed(() => {
+    const live = state.value?.dayNumber ?? 0
+    if (live > 0) return live
+    return endedDayNumber.value
+  })
   const currentDayEvent = computed(() => state.value?.currentDayEvent ?? DayEventType.NormalDay)
   const battlePairs = computed(() => state.value?.battlePairs ?? [])
   const battleSummaries = computed(() => state.value?.battleSummaries ?? [])
@@ -148,6 +154,9 @@ export const useRoomStore = defineStore('room', () => {
     state.value = next
     snapshotReceivedAt.value = Date.now()
     matchId.value = next.matchId
+    if ((next.dayNumber ?? 0) > 0) {
+      endedDayNumber.value = next.dayNumber
+    }
     // Only accept private battle data for this viewer — a leaked opponent "me"
     // must never overwrite local role/hand (e.g. after poison infection).
     if (next.me) {
@@ -159,6 +168,9 @@ export const useRoomStore = defineStore('room', () => {
     }
     if (typeof next.winTeam === 'number' && next.winTeam !== WinTeam.None) {
       winTeam.value = next.winTeam
+      if ((next.dayNumber ?? 0) > 0) {
+        endedDayNumber.value = next.dayNumber
+      }
     }
   }
 
@@ -207,9 +219,13 @@ export const useRoomStore = defineStore('room', () => {
         if (!state.value || !payload) return
         const nextEvent =
           typeof payload.dayEvent === 'number' ? payload.dayEvent : state.value.currentDayEvent
+        const nextDay = payload.dayNumber ?? state.value.dayNumber
+        if (typeof nextDay === 'number' && nextDay > 0) {
+          endedDayNumber.value = nextDay
+        }
         state.value = {
           ...state.value,
-          dayNumber: payload.dayNumber ?? state.value.dayNumber,
+          dayNumber: nextDay,
           currentDayEvent: nextEvent,
         }
       }),
@@ -217,6 +233,8 @@ export const useRoomStore = defineStore('room', () => {
         lastEvent.value = 'GameFinished'
         const winner = payload?.winner
         if (typeof winner === 'number') winTeam.value = winner
+        const liveDay = state.value?.dayNumber ?? 0
+        if (liveDay > 0) endedDayNumber.value = liveDay
       }),
       roomService.onInvitationSent(() => {
         lastEvent.value = 'InvitationSent'
@@ -307,6 +325,7 @@ export const useRoomStore = defineStore('room', () => {
     lastEvent.value = null
     myBattle.value = null
     winTeam.value = WinTeam.None
+    endedDayNumber.value = 0
     lastSyncError.value = null
     snapshotReceivedAt.value = 0
     recoveryPromise = null
@@ -321,6 +340,7 @@ export const useRoomStore = defineStore('room', () => {
     lastEvent,
     myBattle,
     winTeam,
+    endedDayNumber,
     lastSyncError,
     snapshotReceivedAt,
     players,

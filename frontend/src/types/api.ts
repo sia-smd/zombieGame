@@ -166,6 +166,8 @@ export interface MatchSummary {
   maxPlayers: number
   createdAt: string
   name?: string | null
+  winningTeam?: WinTeam
+  totalDays?: number
 }
 
 export interface MatchPlayerSummary {
@@ -175,6 +177,14 @@ export interface MatchPlayerSummary {
   isAlive: boolean
   seatIndex: number
   role: PlayerRole
+}
+
+export interface MatchResultReport {
+  matchId: string
+  status: number
+  winningTeam: WinTeam
+  totalDays: number
+  players: MatchPlayerSummary[]
 }
 
 export interface GamePlayerState {

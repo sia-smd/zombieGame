@@ -98,6 +98,9 @@ public sealed class RoomLifecycleCoordinator : IRoomLifecycleCoordinator
         {
             room.Session.MatchId = room.MatchId;
             room.Session.WinTeam = room.WinTeam;
+            if (room.DayNumber > 0)
+                room.Session.TurnNumber = room.DayNumber;
+
             foreach (var player in room.Players)
             {
                 var sessionPlayer = room.Session.GetPlayer(player.UserId);

@@ -177,6 +177,16 @@ public class MatchmakingController : ControllerBase
         return players is null ? NotFound() : Ok(players);
     }
 
+    [HttpGet("matches/{matchId:guid}/result")]
+    public async Task<ActionResult<MatchResultReportDto>> GetMatchResult(Guid matchId, CancellationToken cancellationToken)
+    {
+        var report = await _matchService.GetMatchResultAsync(
+            GetRequiredUserId(),
+            matchId,
+            cancellationToken);
+        return report is null ? NotFound() : Ok(report);
+    }
+
     private Guid GetRequiredUserId()
     {
         var sub = User.FindFirstValue(ClaimTypes.NameIdentifier)

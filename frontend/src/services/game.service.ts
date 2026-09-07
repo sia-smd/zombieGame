@@ -7,6 +7,7 @@ import type {
   JoinOpenRoomResponse,
   JoinQueueResponse,
   MatchPlayerSummary,
+  MatchResultReport,
   MatchSummary,
   OpenRoomDto,
   RoomConfigResponse,
@@ -73,6 +74,13 @@ export const gameService = {
   async getMatchPlayers(matchId: string): Promise<MatchPlayerSummary[]> {
     const { data } = await api.get<MatchPlayerSummary[]>(
       `/api/matchmaking/matches/${matchId}/players`,
+    )
+    return data
+  },
+
+  async getMatchResult(matchId: string): Promise<MatchResultReport> {
+    const { data } = await api.get<MatchResultReport>(
+      `/api/matchmaking/matches/${matchId}/result`,
     )
     return data
   },

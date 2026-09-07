@@ -117,9 +117,9 @@ Under `IRoomLock` (already held by `RoomStateMachine`):
 
 When OpponentSelection closes (timer or all unpaired ready):
 
-1. **Exactly 2 unmatched** (human or bot): auto-pair them (`TryPairLastTwoUnmatched`), expire pending invites involving them, record history. Neither rests.
+1. **2+ unmatched** (human or bot): randomly pair them all into 1v1s (`PairAllUnmatched`). Expire pending invites involving them. At most one player rests.
 2. **Exactly 1 unmatched**: Rest Mode (default `UnmatchedPlayerRule.Skip`). Natural odd leftover.
-3. **3+ unmatched**: no auto-pair; all of them rest for the day.
+3. Optional `UnmatchedPlayerRule.RandomAssignment`: for the single leftover, break an existing pair so nobody rests (opt-in; default is Skip).
 
 ## Ready System
 

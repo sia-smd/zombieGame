@@ -240,16 +240,15 @@ public sealed class OpponentSelectionPhaseHandler : IRoomPhaseHandler
     {
         var room = context.Room;
 
-        // Exactly two unmatched (bots or humans): force a battle instead of both resting.
-        var autoPair = _opponentSelection.TryPairLastTwoUnmatched(room);
-        if (autoPair is not null)
+        // Pair every leftover unmatched player (2, 4, 6, …). Odd one-out still rests.
+        var autoPairs = _opponentSelection.PairAllUnmatched(room);
+        foreach (var pair in autoPairs)
         {
             await context.History.RecordPairAsync(
                 room.MatchId,
-                autoPair.Player1Id,
-                autoPair.Player2Id,
+                pair.Player1Id,
+                pair.Player2Id,
                 cancellationToken);
-            return;
         }
 
         var unmatched = _opponentSelection.GetUnmatchedPlayers(room);
@@ -260,6 +259,7 @@ public sealed class OpponentSelectionPhaseHandler : IRoomPhaseHandler
         switch (context.Settings.UnmatchedPlayerRule)
         {
             case UnmatchedPlayerRule.RandomAssignment:
+                // Steal a partner from an existing pair so nobody rests (rare / opt-in).
                 var partner = room.AlivePlayers
                     .Where(p => p.UserId != loneId && room.IsPaired(p.UserId))
                     .Select(p => p.UserId)

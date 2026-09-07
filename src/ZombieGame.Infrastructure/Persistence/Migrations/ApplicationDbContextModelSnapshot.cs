@@ -222,8 +222,14 @@ namespace ZombieGame.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<int>("TotalDays")
+                        .HasColumnType("int");
+
                     b.Property<Guid?>("WinnerUserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("WinningTeam")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

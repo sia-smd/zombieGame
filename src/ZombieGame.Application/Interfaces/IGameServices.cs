@@ -7,6 +7,7 @@ public interface IMatchService
 {
     Task<MatchSummaryResponse?> GetMatchAsync(Guid requesterId, Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchPlayerResponse>?> GetMatchPlayersAsync(Guid requesterId, Guid matchId, CancellationToken cancellationToken = default);
+    Task<MatchResultReportDto?> GetMatchResultAsync(Guid requesterId, Guid matchId, CancellationToken cancellationToken = default);
 }
 
 public interface IGameService

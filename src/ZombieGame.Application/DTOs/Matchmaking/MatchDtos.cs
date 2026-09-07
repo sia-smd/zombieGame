@@ -76,7 +76,9 @@ public record MatchSummaryResponse(
     int PlayerCount,
     int MaxPlayers,
     DateTime CreatedAt,
-    string? Name = null);
+    string? Name = null,
+    WinTeam WinningTeam = WinTeam.None,
+    int TotalDays = 0);
 
 public record MatchPlayerResponse(
     Guid UserId,
@@ -85,3 +87,11 @@ public record MatchPlayerResponse(
     bool IsAlive,
     int SeatIndex,
     PlayerRole Role);
+
+/// <summary>End-of-match roster for the result screen (survives room teardown).</summary>
+public record MatchResultReportDto(
+    Guid MatchId,
+    MatchStatus Status,
+    WinTeam WinningTeam,
+    int TotalDays,
+    IReadOnlyList<MatchPlayerResponse> Players);

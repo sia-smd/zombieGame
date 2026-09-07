@@ -15,10 +15,9 @@ import { roomService } from '@/services/room.service'
 import { gameService } from '@/services/game.service'
 import { BattlePublicAction, PlayerRole, WinTeam } from '@/types/enums'
 import { images } from '@/assets/images'
-import type { BattleSummaryDto, RoomPlayerDto } from '@/types/api'
+import type { BattleSummaryDto, MatchPlayerSummary, RoomPlayerDto } from '@/types/api'
 import { tryApplyE2eRoomState } from '@/utils/e2eRoom'
 import { playerAvatarUrl } from '@/utils/playerAvatar'
-import { sameUserId } from '@/utils/ids'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -35,9 +34,20 @@ const token = computed(() => {
   return auth.getMatchSession(props.id)?.token ?? roomToken ?? ''
 })
 
+const reportDay = ref(0)
+const reportWinTeam = ref<WinTeam>(WinTeam.None)
+const reportPlayers = ref<MatchPlayerSummary[]>([])
+const loadingReport = ref(true)
+
 const winner = computed(() => {
+  if (reportWinTeam.value !== WinTeam.None) return reportWinTeam.value
   if (room.winTeam !== WinTeam.None) return room.winTeam
   return room.state?.winTeam ?? WinTeam.None
+})
+
+const displayDay = computed(() => {
+  if (reportDay.value > 0) return reportDay.value
+  return room.dayNumber
 })
 
 const liveNavReady = ref(false)
@@ -46,15 +56,17 @@ useMatchPhaseNavigation(
   () => liveNavReady.value && winner.value === WinTeam.None,
 )
 
-/** Roles from GET /matches/{id}/players — survives room teardown. */
-const persistedRoles = ref<Record<string, PlayerRole>>({})
-
-const alivePlayers = computed(() => room.players.filter((p) => p.isAlive))
-const deadCount = computed(() => room.players.filter((p) => !p.isAlive).length)
 const lastBattles = computed(() => room.battleSummaries.slice(-2))
-const rosterPlayers = computed(() =>
-  [...room.players].sort((a, b) => a.seatIndex - b.seatIndex),
-)
+
+const rosterPlayers = computed(() => {
+  if (reportPlayers.value.length) {
+    return [...reportPlayers.value].sort((a, b) => a.seatIndex - b.seatIndex)
+  }
+  return [...room.players].sort((a, b) => a.seatIndex - b.seatIndex)
+})
+
+const aliveCount = computed(() => rosterPlayers.value.filter((p) => p.isAlive).length)
+const deadCount = computed(() => rosterPlayers.value.filter((p) => !p.isAlive).length)
 
 const headline = computed(() => {
   if (winner.value === WinTeam.Humans) return t('matchResult.humansWin')
@@ -65,16 +77,16 @@ const headline = computed(() => {
 const report = computed(() => {
   if (winner.value === WinTeam.Humans) {
     return t('matchResult.reportHumans', {
-      alive: alivePlayers.value.length,
+      alive: aliveCount.value,
       dead: deadCount.value,
-      days: room.dayNumber,
+      days: displayDay.value,
     })
   }
   if (winner.value === WinTeam.Zombies) {
     return t('matchResult.reportZombies', {
-      alive: alivePlayers.value.length,
+      alive: aliveCount.value,
       dead: deadCount.value,
-      days: room.dayNumber,
+      days: displayDay.value,
     })
   }
   return t('matchResult.reportUnknown')
@@ -100,74 +112,72 @@ function hasRevealedRole(role?: PlayerRole | null) {
   return role !== undefined && role !== null && role !== PlayerRole.Unknown
 }
 
-function roleFor(player: RoomPlayerDto): PlayerRole | null {
-  if (hasRevealedRole(player.role)) return player.role!
-  const key = Object.keys(persistedRoles.value).find((id) => sameUserId(id, player.userId))
-  if (!key) return null
-  const role = persistedRoles.value[key]
-  return hasRevealedRole(role) ? role : null
+function roleFor(player: MatchPlayerSummary | RoomPlayerDto): PlayerRole | null {
+  const role = 'role' in player ? player.role : null
+  return hasRevealedRole(role) ? (role as PlayerRole) : null
 }
 
-async function loadPersistedRoles(retries = 3) {
+function playerImageId(player: MatchPlayerSummary | RoomPlayerDto): string | undefined {
+  return 'imageId' in player ? player.imageId : undefined
+}
+
+async function loadMatchReport(retries = 5) {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const players = await gameService.getMatchPlayers(props.id)
-      const next: Record<string, PlayerRole> = {}
-      for (const p of players) {
-        if (hasRevealedRole(p.role)) next[p.userId] = p.role
+      const result = await gameService.getMatchResult(props.id)
+      if (result.totalDays > 0) reportDay.value = result.totalDays
+      if (result.winningTeam !== WinTeam.None) reportWinTeam.value = result.winningTeam
+      reportPlayers.value = result.players ?? []
+
+      const hasRoles = result.players.some((p) => hasRevealedRole(p.role))
+      if ((result.totalDays > 0 || result.winningTeam !== WinTeam.None) && hasRoles) {
+        return
       }
-      persistedRoles.value = next
-      if (Object.keys(next).length > 0) return
+      if (hasRoles && result.totalDays > 0) return
     } catch {
-      // room may finish a moment before MatchPlayer.Role is persisted
+      // Match finalization may still be writing roles/days.
     }
-    await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
+    await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)))
   }
 }
 
 onMounted(async () => {
   auth.hydrateFromStorage()
+  // Freeze whatever day we already know before sync can wipe live room state.
+  if (room.dayNumber > 0) reportDay.value = room.dayNumber
+  if (room.winTeam !== WinTeam.None) reportWinTeam.value = room.winTeam
+
   const session = token.value
-  if (!session) {
-    await loadPersistedRoles()
-    return
-  }
-  if (tryApplyE2eRoomState(room, props.id, session) && winner.value !== WinTeam.None) {
-    auth.clearMatchSession(props.id)
-    void auth.loadProfile()
-    await loadPersistedRoles()
-    return
-  }
-
-  const rosterHasRoles = room.players.some((p) => hasRevealedRole(p.role))
-  const hasFinalState =
-    room.matchId?.toLowerCase() === props.id.toLowerCase() &&
-    room.state?.matchId?.toLowerCase() === props.id.toLowerCase() &&
-    winner.value !== WinTeam.None
-
-  if (hasFinalState && rosterHasRoles) {
-    auth.clearMatchSession(props.id)
-    void auth.loadProfile()
-    return
-  }
-
-  try {
-    if (room.matchId !== props.id || room.state?.matchId !== props.id) {
-      await room.resume(props.id, session)
-    }
-    await roomService.syncRoom(props.id, session).catch(() => undefined)
-    if (winner.value === WinTeam.None) {
-      liveNavReady.value = true
-      await loadPersistedRoles()
+  if (session) {
+    if (tryApplyE2eRoomState(room, props.id, session) && winner.value !== WinTeam.None) {
+      auth.clearMatchSession(props.id)
+      void auth.loadProfile()
+      loadingReport.value = true
+      await loadMatchReport()
+      loadingReport.value = false
       return
     }
-    auth.clearMatchSession(props.id)
-    void auth.loadProfile()
-  } catch (error: unknown) {
-    settings.reportError(error)
+
+    try {
+      if (room.matchId !== props.id || room.state?.matchId !== props.id) {
+        await room.resume(props.id, session).catch(() => undefined)
+      }
+      await roomService.syncRoom(props.id, session).catch(() => undefined)
+      if (room.dayNumber > 0 && reportDay.value <= 0) reportDay.value = room.dayNumber
+      if (winner.value === WinTeam.None) {
+        liveNavReady.value = true
+      } else {
+        auth.clearMatchSession(props.id)
+        void auth.loadProfile()
+      }
+    } catch (error: unknown) {
+      settings.reportError(error)
+    }
   }
 
-  await loadPersistedRoles()
+  loadingReport.value = true
+  await loadMatchReport()
+  loadingReport.value = false
 })
 
 function goHome() {
@@ -180,7 +190,7 @@ function goHome() {
 
 <template>
   <MobileFrame fullscreen>
-    <LoadingOverlay :visible="room.isConnecting" />
+    <LoadingOverlay :visible="room.isConnecting || loadingReport" />
 
     <PageBackdrop
       :src="images.backgrounds.login"
@@ -192,7 +202,7 @@ function goHome() {
       >
         <WoodPanel class="result-board max-h-[calc(100vh-6rem)] overflow-y-auto px-4 py-5 text-center">
           <p class="text-xs font-bold uppercase tracking-widest text-amber-100/70">
-            {{ t('matchResult.dayLabel', { n: room.dayNumber }) }}
+            {{ t('matchResult.dayLabel', { n: displayDay }) }}
           </p>
           <h1 class="result-title mt-1 font-display text-3xl uppercase tracking-widest">
             {{ headline }}
@@ -202,7 +212,7 @@ function goHome() {
           <div class="result-stats mt-4 grid grid-cols-2 gap-2 text-left">
             <div class="stat-box">
               <span>{{ t('matchResult.survivors') }}</span>
-              <strong class="text-green-400">{{ alivePlayers.length }}</strong>
+              <strong class="text-green-400">{{ aliveCount }}</strong>
             </div>
             <div class="stat-box">
               <span>{{ t('matchResult.eliminated') }}</span>
@@ -227,7 +237,11 @@ function goHome() {
             >
               <div class="flex min-w-0 items-center gap-2">
                 <div class="roster-avatar">
-                  <img :src="playerAvatarUrl(player.imageId)" alt="" class="h-full w-full object-cover" />
+                  <img
+                    :src="playerAvatarUrl(playerImageId(player))"
+                    alt=""
+                    class="h-full w-full object-cover"
+                  />
                 </div>
                 <span class="truncate text-sm font-bold text-white">{{ player.username }}</span>
               </div>

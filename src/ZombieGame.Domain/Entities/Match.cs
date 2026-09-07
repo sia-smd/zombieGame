@@ -15,6 +15,9 @@ public class Match
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
     public Guid? WinnerUserId { get; set; }
+    public WinTeam WinningTeam { get; set; } = WinTeam.None;
+    /// <summary>Room day number when the match ended (1+). 0 means unknown/legacy.</summary>
+    public int TotalDays { get; set; }
 
     public ICollection<MatchPlayer> Players { get; set; } = new List<MatchPlayer>();
     public ICollection<GameActionLog> ActionLogs { get; set; } = new List<GameActionLog>();

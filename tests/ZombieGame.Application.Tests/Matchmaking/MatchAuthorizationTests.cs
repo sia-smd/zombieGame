@@ -5,6 +5,7 @@ using ZombieGame.Application.Tests.Support;
 using ZombieGame.Domain.Entities;
 using ZombieGame.Domain.Enums;
 using ZombieGame.Domain.Interfaces;
+using ZombieGame.Domain.Models.Room;
 
 public class MatchAuthorizationTests
 {
@@ -13,8 +14,7 @@ public class MatchAuthorizationTests
     {
         var memberId = Guid.NewGuid();
         var match = CreateMatch(memberId, MatchStatus.InProgress);
-        var service = new MatchService(new FakeMatchRepository(match), new StubUserRepository());
-
+        var service = new MatchService(new FakeMatchRepository(match), new StubUserRepository(), new NullSummaryStore());
         Assert.NotNull(await service.GetMatchAsync(memberId, match.Id));
         Assert.Null(await service.GetMatchAsync(Guid.NewGuid(), match.Id));
     }
@@ -37,7 +37,7 @@ public class MatchAuthorizationTests
         var users = new StubUserRepository();
         users.Users[requesterId] = new User { Id = requesterId, Username = "Me" };
         users.Users[opponentId] = new User { Id = opponentId, Username = "Them" };
-        var service = new MatchService(new FakeMatchRepository(match), users);
+        var service = new MatchService(new FakeMatchRepository(match), users, new NullSummaryStore());
 
         var live = await service.GetMatchPlayersAsync(requesterId, match.Id);
         Assert.NotNull(live);
@@ -45,8 +45,15 @@ public class MatchAuthorizationTests
         Assert.Equal(PlayerRole.Unknown, live.Single(p => p.UserId == opponentId).Role);
 
         match.Status = MatchStatus.Finished;
+        match.WinningTeam = WinTeam.Humans;
+        match.TotalDays = 4;
         var finished = await service.GetMatchPlayersAsync(requesterId, match.Id);
         Assert.Equal(PlayerRole.Zombie, finished!.Single(p => p.UserId == opponentId).Role);
+
+        var report = await service.GetMatchResultAsync(requesterId, match.Id);
+        Assert.NotNull(report);
+        Assert.Equal(4, report!.TotalDays);
+        Assert.Equal(WinTeam.Humans, report.WinningTeam);
         Assert.Null(await service.GetMatchPlayersAsync(Guid.NewGuid(), match.Id));
     }
 
@@ -58,6 +65,15 @@ public class MatchAuthorizationTests
             SessionToken = "secret-session",
             Players = [new MatchPlayer { UserId = memberId, Role = PlayerRole.Human }]
         };
+
+    private sealed class NullSummaryStore : IMatchSummaryStore
+    {
+        public Task SaveAsync(MatchSummary summary, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<MatchSummary?> GetAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<MatchSummary?>(null);
+    }
 
     private sealed class StubUserRepository : IUserRepository
     {
