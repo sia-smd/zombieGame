@@ -343,6 +343,8 @@ public sealed class GameRulesEngine : IGameRulesEngine
         {
             player.ShotgunHitCount = 0;
             player.HasRevealedThisDay = false;
+            player.HasInfectionIntentThisResolution = false;
+            player.InfectionPreemptedThisResolution = false;
             if (player.Role == PlayerRole.PowerZombie)
                 player.RemainingHealth = 2;
         }

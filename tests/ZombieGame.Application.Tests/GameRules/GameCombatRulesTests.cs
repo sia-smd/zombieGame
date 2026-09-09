@@ -50,6 +50,21 @@ public class GameCombatRulesTests
         Assert.True(GameCombatRules.CanHealTarget(revealedZombie));
         Assert.False(GameCombatRules.CanHealTarget(hiddenZombie));
         Assert.True(GameCombatRules.CanHealTarget(revealedPower));
+        Assert.False(GameCombatRules.CanHealTargetInCurrentResolution(hiddenZombie));
+    }
+
+    [Fact]
+    public void CanHealTargetInCurrentResolution_AllowsQueuedInfectionIntent()
+    {
+        var attackingZombie = new GamePlayerState
+        {
+            Role = PlayerRole.Zombie,
+            HasRevealedThisDay = false,
+            HasInfectionIntentThisResolution = true
+        };
+
+        Assert.False(GameCombatRules.CanHealTarget(attackingZombie));
+        Assert.True(GameCombatRules.CanHealTargetInCurrentResolution(attackingZombie));
     }
 
     [Theory]

@@ -96,15 +96,28 @@ public static class GameCombatRules
         _ => 1
     };
 
+    public static bool IsInfectionEffect(string effectKey) =>
+        effectKey.Equals("infect", StringComparison.OrdinalIgnoreCase) ||
+        effectKey.Equals("power_zombie", StringComparison.OrdinalIgnoreCase) ||
+        effectKey.Equals("zombie_poison", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Heal only affects infected players who attacked (infected someone) this day.
-    /// Players who pass and stay hidden cannot be healed.
+    /// Heal only affects infected players who already attacked this day.
+    /// Holding Heal in hand must not auto-cure a first, still-hidden infection.
     /// </summary>
     public static bool CanHealTarget(PlayerRole role, bool hasRevealedThisDay) =>
         hasRevealedThisDay && role is PlayerRole.Zombie or PlayerRole.PowerZombie;
 
     public static bool CanHealTarget(GamePlayerState target) =>
         CanHealTarget(target.Role, target.HasRevealedThisDay);
+
+    /// <summary>
+    /// Queued Heal in the same battle may cure an attacker who has infection intent
+    /// even though <see cref="GamePlayerState.HasRevealedThisDay"/> is not set yet.
+    /// </summary>
+    public static bool CanHealTargetInCurrentResolution(GamePlayerState target) =>
+        target.IsInfectedTeam &&
+        (target.HasRevealedThisDay || target.HasInfectionIntentThisResolution);
 
     public static PlayerRole? GetHealResultRole(PlayerRole currentRole) => currentRole switch
     {

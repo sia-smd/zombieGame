@@ -107,9 +107,10 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void Resolver_FirstInfect_ConvertsEvenWhenHumanHoldsHeal()
+    public void Resolver_FirstInfect_ConvertsWhenHumanHoldsHealButDidNotPlayIt()
     {
-        // Regression: revealing before Apply made heal-before-infect cancel the first infection.
+        // Holding Heal without queueing it must not cancel the first infection.
+        // Same-battle Heal that WAS queued is covered by HealInfectionBattleTests.
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();
         var state = GameTestBuilder.CreateSession(
@@ -291,7 +292,29 @@ public class CardEffectHandlerTests
     }
 
     [Fact]
-    public void Heal_ConvertsRevealedZombieToHuman()
+    public void Heal_CuresZombieWithQueuedInfectionIntent()
+    {
+        var humanId = Guid.NewGuid();
+        var zombieId = Guid.NewGuid();
+        var state = GameTestBuilder.CreateSession(
+            (humanId, PlayerRole.Human, true),
+            (zombieId, PlayerRole.Zombie, true));
+        state.Player(zombieId).HasRevealedThisDay = false;
+        state.Player(zombieId).HasInfectionIntentThisResolution = true;
+
+        var result = _heal.Apply(new CardEffectContext
+        {
+            State = state,
+            ActorUserId = humanId,
+            TargetUserId = zombieId,
+            Card = TestCards.Heal
+        });
+
+        Assert.True(result.Success);
+        Assert.True(result.RoleChanged);
+        Assert.Equal(PlayerRole.Human, state.Player(zombieId).Role);
+        Assert.True(state.Player(zombieId).InfectionPreemptedThisResolution);
+    }
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();

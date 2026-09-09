@@ -137,7 +137,7 @@ public sealed class HealHandler : CardEffectHandlerBase
     {
         var target = context.Target;
 
-        if (!GameCombatRules.CanHealTarget(target))
+        if (!GameCombatRules.CanHealTargetInCurrentResolution(target))
             return CardEffectResult.Ok("Heal had no effect on this target.");
 
         var newRole = GameCombatRules.GetHealResultRole(target.Role);
@@ -147,6 +147,7 @@ public sealed class HealHandler : CardEffectHandlerBase
         var wasPowerZombie = target.Role == PlayerRole.PowerZombie;
         target.Role = newRole.Value;
         target.RemainingHealth = 1;
+        target.InfectionPreemptedThisResolution = true;
         ResetCombatState(target);
 
         var hand = context.State.PlayerHands.FirstOrDefault(h => h.UserId == context.TargetUserId);

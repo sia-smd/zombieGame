@@ -264,6 +264,8 @@ public sealed class BattleService : IBattleService
             return;
         }
 
+        MarkQueuedInfectionIntent(room, battle);
+
         var indexed = battle.CardsPlayed
             .Select((play, index) => new { Play = play, Index = index })
             .ToList();
@@ -279,51 +281,61 @@ public sealed class BattleService : IBattleService
             .Select(item => item.Play)
             .ToList();
 
-        foreach (var play in ordered)
+        try
         {
-            var actor = room.Session.GetPlayer(play.PlayerId);
-            if (actor is null || !actor.IsAlive)
-                continue;
-
-            var card = _cardRegistry.GetById(play.CardId);
-            if (card is null || IsPassCard(card.Id))
-                continue;
-
-            var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == play.PlayerId);
-            if (hand is null)
-                continue;
-
-            if (play.InventorySlotIndex is int slotIndex)
+            foreach (var play in ordered)
             {
-                if (hand.GetInventorySlot(slotIndex) != play.CardId)
+                var actor = room.Session.GetPlayer(play.PlayerId);
+                if (actor is null || !actor.IsAlive)
                     continue;
-            }
-            else if (!hand.ContainsCard(play.CardId))
-            {
-                continue;
-            }
 
-            var targetId = play.TargetUserId
-                ?? ResolveTargetId(battle, play.PlayerId, card, null);
+                var card = _cardRegistry.GetById(play.CardId);
+                if (card is null || IsPassCard(card.Id))
+                    continue;
 
-            try
-            {
-                var effectResult = _rulesEngine.ApplyCardEffect(room.Session, play.PlayerId, card, targetId);
-                _consumption.ConsumeAfterPlay(hand, card, play.InventorySlotIndex);
+                if (ShouldSkipInfectionPlay(actor, card))
+                    continue;
 
-                var opponent = battle.PlayerA == play.PlayerId ? battle.PlayerB : battle.PlayerA;
-                BotObservationRecorder.OnCardOutcome(
-                    room.Session,
-                    play.PlayerId,
-                    targetId,
-                    effectResult,
-                    card.EffectKey,
-                    new[] { battle.PlayerA, battle.PlayerB, opponent });
+                var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == play.PlayerId);
+                if (hand is null)
+                    continue;
+
+                if (play.InventorySlotIndex is int slotIndex)
+                {
+                    if (hand.GetInventorySlot(slotIndex) != play.CardId)
+                        continue;
+                }
+                else if (!hand.ContainsCard(play.CardId))
+                {
+                    continue;
+                }
+
+                var targetId = play.TargetUserId
+                    ?? ResolveTargetId(battle, play.PlayerId, card, null);
+
+                try
+                {
+                    var effectResult = _rulesEngine.ApplyCardEffect(room.Session, play.PlayerId, card, targetId);
+                    _consumption.ConsumeAfterPlay(hand, card, play.InventorySlotIndex);
+
+                    var opponent = battle.PlayerA == play.PlayerId ? battle.PlayerB : battle.PlayerA;
+                    BotObservationRecorder.OnCardOutcome(
+                        room.Session,
+                        play.PlayerId,
+                        targetId,
+                        effectResult,
+                        card.EffectKey,
+                        new[] { battle.PlayerA, battle.PlayerB, opponent });
+                }
+                catch (ServiceException)
+                {
+                    // Card may no longer be valid after earlier effects in the resolution chain.
+                }
             }
-            catch (ServiceException)
-            {
-                // Card may no longer be valid after earlier effects in the resolution chain.
-            }
+        }
+        finally
+        {
+            ClearResolutionFlags(room);
         }
 
         battle.Status = BattleAggregateStatus.Finished;
@@ -415,6 +427,33 @@ public sealed class BattleService : IBattleService
         }
 
         return targetUserId ?? userId;
+    }
+
+    private void MarkQueuedInfectionIntent(RoomState room, Battle battle)
+    {
+        foreach (var play in battle.CardsPlayed)
+        {
+            var card = _cardRegistry.GetById(play.CardId);
+            if (card is null || !GameCombatRules.IsInfectionEffect(card.EffectKey))
+                continue;
+
+            var actor = room.Session.GetPlayer(play.PlayerId);
+            if (actor is not null)
+                actor.HasInfectionIntentThisResolution = true;
+        }
+    }
+
+    private static bool ShouldSkipInfectionPlay(GamePlayerState actor, CardDefinition card) =>
+        GameCombatRules.IsInfectionEffect(card.EffectKey) &&
+        (actor.InfectionPreemptedThisResolution || !actor.IsInfectedTeam);
+
+    private static void ClearResolutionFlags(RoomState room)
+    {
+        foreach (var player in room.Session.Players)
+        {
+            player.HasInfectionIntentThisResolution = false;
+            player.InfectionPreemptedThisResolution = false;
+        }
     }
 
     private static void ResolveInventorySlot(

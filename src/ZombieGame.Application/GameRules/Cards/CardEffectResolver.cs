@@ -46,8 +46,8 @@ public sealed class CardEffectResolver : ICardEffectResolver
             throw new ServiceException(DescribeCannotPlay(context, effectKey));
         }
 
-        // Resolve first, then reveal. Revealing before Apply made heal-before-infect fire on the
-        // same attack (CanHealTarget saw HasRevealedThisDay from this play) and cancelled infection.
+        // Reveal after Apply so CombatPriorityService (hand Heal, already-revealed attackers)
+        // cannot cancel a first infection. Queued same-battle Heal uses infection-intent instead.
         var result = handler.Apply(context);
         RevealActorIfAttackCard(context, effectKey);
         return result;

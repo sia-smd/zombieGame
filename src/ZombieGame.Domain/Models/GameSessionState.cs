@@ -51,6 +51,16 @@ public class GamePlayerState
     public int ActionsPerTurn { get; set; } = 2;
     public int RemainingActions => Math.Max(0, ActionsPerTurn - ActionsUsedThisTurn);
     public bool HasRevealedThisDay { get; set; }
+    /// <summary>
+    /// Transient: this player queued an infection/poison play in the current battle resolution.
+    /// Lets Heal treat them as an attacker before <see cref="HasRevealedThisDay"/> is set.
+    /// </summary>
+    public bool HasInfectionIntentThisResolution { get; set; }
+    /// <summary>
+    /// Transient: a successful Heal cured/demoted this player during the current resolution.
+    /// Remaining queued infection plays from them must not apply.
+    /// </summary>
+    public bool InfectionPreemptedThisResolution { get; set; }
     public bool InactiveForNextDealing { get; set; }
     public int PassesUsedThisDay { get; set; }
 
