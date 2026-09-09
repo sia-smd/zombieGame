@@ -37,6 +37,15 @@ public class RoomSettings
     public bool ExportDiscussionOnRoomFinish { get; set; } = true;
     public int RoomLoopIntervalMs { get; set; } = 500;
 
+    /// <summary>Redis/in-memory lock lease. Must outlast a single command including DayStart fee collection.</summary>
+    public int LockTtlSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// How long a writer waits to acquire the room lock before failing.
+    /// Lets two players in the same battle serialize instead of last-write-wins.
+    /// </summary>
+    public int LockWaitMilliseconds { get; set; } = 2000;
+
     public bool RoomBotsEnabled { get; set; } = true;
     public int BotInviteMinDelaySeconds { get; set; } = 1;
     public int BotInviteMaxDelaySeconds { get; set; } = 4;

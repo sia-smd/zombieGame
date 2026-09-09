@@ -252,7 +252,6 @@ public sealed class RoomService : IRoomService
         CancellationToken cancellationToken = default)
     {
         await ValidateAccessAsync(userId, matchId, sessionToken, cancellationToken);
-        await _stateMachine.SyncPlayersFromMatchAsync(matchId, cancellationToken);
         var room = await _stateMachine.GetStateAsync(matchId, cancellationToken);
         if (room is null)
             return null;

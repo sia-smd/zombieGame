@@ -135,16 +135,22 @@ public sealed class RoomStateMachine : IRoomStateMachine
             Players = players
         };
 
-        if (!await _store.TryAddAsync(match.Id, room, cancellationToken))
-            await _store.SetAsync(room, cancellationToken);
+        if (await _store.TryAddAsync(match.Id, room, cancellationToken))
+            return room;
 
-        return room;
+        // Never last-write-wins over a room that already exists (may already be in-game).
+        var existing = await _store.GetAsync(match.Id, cancellationToken);
+        return existing ?? room;
     }
 
     public async Task SyncPlayersFromMatchAsync(Guid matchId, CancellationToken cancellationToken = default)
     {
         var match = await _matchRepository.GetWithPlayersAsync(matchId, cancellationToken);
         if (match is null)
+            return;
+
+        await using var guard = await AcquireLockAsync(matchId, cancellationToken);
+        if (guard is null)
             return;
 
         var room = await _store.GetAsync(matchId, cancellationToken);
@@ -202,7 +208,7 @@ public sealed class RoomStateMachine : IRoomStateMachine
 
     public async Task RemovePlayerFromLobbyAsync(Guid matchId, Guid userId, CancellationToken cancellationToken = default)
     {
-        await using var guard = await AcquireLockAsync(matchId, cancellationToken);
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
         var room = await _store.GetAsync(matchId, cancellationToken);
         if (room is null)
             return;
@@ -217,7 +223,7 @@ public sealed class RoomStateMachine : IRoomStateMachine
 
     public async Task DiscardLobbyRoomAsync(Guid matchId, CancellationToken cancellationToken = default)
     {
-        await using var guard = await AcquireLockAsync(matchId, cancellationToken);
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
         await CleanupRoomAsync(matchId, cancellationToken);
         await _activeMatches.UnregisterAsync(matchId, cancellationToken);
         await _store.RemoveAsync(matchId, cancellationToken);
@@ -243,6 +249,7 @@ public sealed class RoomStateMachine : IRoomStateMachine
 
     public async Task<RoomTransitionResult> StartGameAsync(Guid matchId, CancellationToken cancellationToken = default)
     {
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
         var room = await RequireRoomAsync(matchId, cancellationToken);
         if (room.CurrentPhase != RoomPhase.Lobby)
             return RoomTransitionResult.Stay("Game already started.");
@@ -288,8 +295,7 @@ public sealed class RoomStateMachine : IRoomStateMachine
 
     public async Task<RoomTransitionResult> DispatchAsync(Guid matchId, IRoomCommand command, CancellationToken cancellationToken = default)
     {
-        await using var guard = await AcquireLockAsync(matchId, cancellationToken)
-            ?? throw new ServiceException("Room is busy. Try again.");
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         var room = await RequireRoomAsync(matchId, cancellationToken);
         var context = BuildContext(room);
@@ -433,8 +439,34 @@ public sealed class RoomStateMachine : IRoomStateMachine
         await _store.GetAsync(matchId, cancellationToken)
         ?? throw new ServiceException("Room not found.");
 
-    private async Task<IAsyncDisposable?> AcquireLockAsync(Guid matchId, CancellationToken cancellationToken) =>
-        await _lock.TryAcquireAsync(matchId, TimeSpan.FromSeconds(5), cancellationToken);
+    private async Task<IAsyncDisposable> AcquireRequiredLockAsync(Guid matchId, CancellationToken cancellationToken) =>
+        await AcquireLockAsync(matchId, cancellationToken)
+            ?? throw new ServiceException("Room is busy. Try again.");
+
+    /// <summary>
+    /// Tries to acquire the distributed room lock, retrying until <see cref="RoomSettings.LockWaitMilliseconds"/>.
+    /// Lease TTL is <see cref="RoomSettings.LockTtlSeconds"/> — if a command outlives the lease another node can enter.
+    /// </summary>
+    private async Task<IAsyncDisposable?> AcquireLockAsync(Guid matchId, CancellationToken cancellationToken)
+    {
+        var lease = TimeSpan.FromSeconds(Math.Max(1, _settings.LockTtlSeconds));
+        var wait = TimeSpan.FromMilliseconds(Math.Max(0, _settings.LockWaitMilliseconds));
+        var deadline = DateTime.UtcNow + wait;
+
+        while (true)
+        {
+            var guard = await _lock.TryAcquireAsync(matchId, lease, cancellationToken);
+            if (guard is not null)
+                return guard;
+
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                return null;
+
+            var delay = remaining < TimeSpan.FromMilliseconds(20) ? remaining : TimeSpan.FromMilliseconds(20);
+            await Task.Delay(delay, cancellationToken);
+        }
+    }
 
     private static string ResolveImageId(User? user) =>
         string.IsNullOrWhiteSpace(user?.Profile?.ImageId) ? "avatar_default_01" : user.Profile.ImageId;

@@ -56,6 +56,10 @@ public class GameService : IGameService
 
     private readonly IUnitOfWork _unitOfWork;
 
+    private readonly IRoomLock _roomLock;
+
+    private readonly RoomSettings _roomSettings;
+
     private readonly GameSettings _settings;
 
 
@@ -84,6 +88,10 @@ public class GameService : IGameService
 
         IUnitOfWork unitOfWork,
 
+        IRoomLock roomLock,
+
+        IOptions<RoomSettings> roomSettings,
+
         IOptions<GameSettings> settings)
 
     {
@@ -109,6 +117,10 @@ public class GameService : IGameService
         _consumption = consumption;
 
         _unitOfWork = unitOfWork;
+
+        _roomLock = roomLock;
+
+        _roomSettings = roomSettings.Value;
 
         _settings = settings.Value;
 
@@ -157,6 +169,8 @@ public class GameService : IGameService
     {
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
+
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         if (match.Status == MatchStatus.InProgress)
         {
@@ -229,6 +243,8 @@ public class GameService : IGameService
     {
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
+
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         await EnsureIdempotentAsync(matchId, request.IdempotencyKey, cancellationToken);
 
@@ -332,6 +348,8 @@ public class GameService : IGameService
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
 
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
+
         await EnsureIdempotentAsync(matchId, request.IdempotencyKey, cancellationToken);
 
 
@@ -363,6 +381,8 @@ public class GameService : IGameService
     {
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
+
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         await EnsureIdempotentAsync(matchId, request.IdempotencyKey, cancellationToken);
 
@@ -401,6 +421,8 @@ public class GameService : IGameService
     {
 
         var match = await ValidateMatchAccessAsync(userId, matchId, sessionToken, cancellationToken);
+
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         await EnsureIdempotentAsync(matchId, request.IdempotencyKey, cancellationToken);
 
@@ -473,6 +495,8 @@ public class GameService : IGameService
     public async Task<GameActionResult> AdvancePhaseIfExpiredAsync(Guid matchId, CancellationToken cancellationToken = default)
 
     {
+
+        await using var guard = await AcquireRequiredLockAsync(matchId, cancellationToken);
 
         var state = await _sessionStore.GetAsync(matchId, cancellationToken)
 
@@ -587,6 +611,27 @@ public class GameService : IGameService
     private async Task PersistSessionAsync(GameSessionState state, CancellationToken cancellationToken) =>
 
         await _sessionStore.SetAsync(state, cancellationToken);
+
+    private async Task<IAsyncDisposable> AcquireRequiredLockAsync(Guid matchId, CancellationToken cancellationToken)
+    {
+        var lease = TimeSpan.FromSeconds(Math.Max(1, _roomSettings.LockTtlSeconds));
+        var wait = TimeSpan.FromMilliseconds(Math.Max(0, _roomSettings.LockWaitMilliseconds));
+        var deadline = DateTime.UtcNow + wait;
+
+        while (true)
+        {
+            var handle = await _roomLock.TryAcquireAsync(matchId, lease, cancellationToken);
+            if (handle is not null)
+                return handle;
+
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new ServiceException("Match is busy. Try again.");
+
+            var delay = remaining < TimeSpan.FromMilliseconds(20) ? remaining : TimeSpan.FromMilliseconds(20);
+            await Task.Delay(delay, cancellationToken);
+        }
+    }
 
 
 

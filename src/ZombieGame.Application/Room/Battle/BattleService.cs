@@ -13,6 +13,11 @@ using ZombieGame.Domain.Interfaces;
 using ZombieGame.Domain.Models;
 using ZombieGame.Domain.Models.Room;
 
+/// <summary>
+/// Battle persistence is last-write-wins. Every caller MUST hold <c>IRoomLock</c> for
+/// <c>room.MatchId</c> across Get/mutate/Save. Production callers go through
+/// <c>RoomStateMachine.DispatchAsync</c> / <c>TickAsync</c>.
+/// </summary>
 public interface IBattleService
 {
     Task<Battle> CreateBattleAsync(RoomState room, Guid playerA, Guid playerB, TimeSpan duration, CancellationToken cancellationToken = default);

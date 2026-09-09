@@ -8,6 +8,7 @@ using ZombieGame.Domain.Models.Room;
 
 public sealed class FakeCoinService : ICoinService
 {
+    private readonly object _gate = new();
     public List<Guid> Winners { get; } = new();
     public List<Guid> Losers { get; } = new();
 
@@ -18,7 +19,8 @@ public sealed class FakeCoinService : ICoinService
 
     public Task DeductEntryFeeAsync(Guid userId, Guid matchId, CancellationToken cancellationToken = default)
     {
-        EntryFees.Add((userId, matchId));
+        lock (_gate)
+            EntryFees.Add((userId, matchId));
         return Task.CompletedTask;
     }
 
