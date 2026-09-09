@@ -294,7 +294,10 @@ public sealed class BattleService : IBattleService
                     continue;
 
                 if (ShouldSkipInfectionPlay(actor, card))
+                {
+                    play.Skipped = true;
                     continue;
+                }
 
                 var hand = room.Session.PlayerHands.FirstOrDefault(h => h.UserId == play.PlayerId);
                 if (hand is null)

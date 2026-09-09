@@ -315,6 +315,9 @@ public class CardEffectHandlerTests
         Assert.Equal(PlayerRole.Human, state.Player(zombieId).Role);
         Assert.True(state.Player(zombieId).InfectionPreemptedThisResolution);
     }
+
+    [Fact]
+    public void Heal_CuresRevealedZombie()
     {
         var humanId = Guid.NewGuid();
         var zombieId = Guid.NewGuid();

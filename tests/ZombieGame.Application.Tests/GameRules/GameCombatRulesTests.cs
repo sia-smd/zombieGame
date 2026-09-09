@@ -40,6 +40,16 @@ public class GameCombatRulesTests
     public void GetShotgunHitsRequired_PowerZombieImmuneOnStorm() =>
         Assert.Equal(int.MaxValue, GameCombatRules.GetShotgunHitsRequired(PlayerRole.PowerZombie, DayEventType.Storm));
 
+    [Theory]
+    [InlineData("infect", true)]
+    [InlineData("zombie_poison", true)]
+    [InlineData("power_zombie", true)]
+    [InlineData("heal", false)]
+    [InlineData("shield", false)]
+    [InlineData("shoot", false)]
+    public void IsInfectionEffect_DetectsPoisonKeys(string effectKey, bool expected) =>
+        Assert.Equal(expected, GameCombatRules.IsInfectionEffect(effectKey));
+
     [Fact]
     public void CanHealTarget_RequiresAttackReveal()
     {

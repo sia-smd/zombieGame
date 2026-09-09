@@ -34,6 +34,8 @@ public class BattleCardPlay
     public int? InventorySlotIndex { get; set; }
     public Guid? TargetUserId { get; set; }
     public DateTime PlayedAt { get; set; }
+    /// <summary>True when resolution skipped this play (e.g. Heal preempted the attacker's Infection).</summary>
+    public bool Skipped { get; set; }
 }
 
 public class PlayerActiveMatch

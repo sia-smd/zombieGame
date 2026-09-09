@@ -4,12 +4,12 @@
 Baseline: Standard (10 Human / 1 Zombie / 1 PowerZombie)
 Compare:  No PowerZombie
 
-  Human Win %                2.10 →     2.60  (Δ +0.50)
-  Zombie Win %              97.90 →    97.40  (Δ -0.50)
-  Avg Days                  10.16 →     9.37  (Δ -0.79)
-  Avg Cards/Match           26.51 →    25.46  (Δ -1.05)
-  Shotgun/Match              3.09 →     2.44  (Δ -0.65)
-  Heal/Match                 0.29 →     0.28  (Δ -0.01)
-  Infection Success %       44.27 →    48.36  (Δ +4.09)
-  Human PASS %              84.06 →    83.41  (Δ -0.65)
+  Human Win %                3.50 →     1.70  (Δ -1.80)
+  Zombie Win %              96.50 →    98.30  (Δ +1.80)
+  Avg Days                  10.44 →     9.07  (Δ -1.37)
+  Avg Cards/Match           27.34 →    24.52  (Δ -2.82)
+  Shotgun/Match              3.34 →     2.21  (Δ -1.13)
+  Heal/Match                 0.33 →     0.25  (Δ -0.08)
+  Infection Success %       43.26 →    48.96  (Δ +5.70)
+  Human PASS %              83.52 →    84.62  (Δ +1.10)
 ══════════════════════════════════════════════════════════

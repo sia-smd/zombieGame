@@ -30,7 +30,10 @@ public class HealInfectionBattleTests
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(human)!.Role);
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(zombie)!.Role);
         Assert.Null(room.Session.PlayerHands.First(h => h.UserId == human).InventorySlot1);
-        Assert.Equal(ActionCardCatalog.ZombiePoison, room.Session.PlayerHands.First(h => h.UserId == zombie).InventorySlot1);
+        var zombieHand = room.Session.PlayerHands.First(h => h.UserId == zombie);
+        Assert.DoesNotContain(ActionCardCatalog.ZombiePoison, zombieHand.GetInventoryCardIds());
+        Assert.Contains(ActionCardCatalog.Visitor, zombieHand.GetInventoryCardIds());
+        Assert.True(battle.CardsPlayed.Where(c => c.CardId == TestCards.ZombiePoison.Id).All(c => c.Skipped));
         Assert.False(room.Session.GetPlayer(human)!.HasInfectionIntentThisResolution);
         Assert.False(room.Session.GetPlayer(zombie)!.InfectionPreemptedThisResolution);
     }
@@ -82,6 +85,7 @@ public class HealInfectionBattleTests
 
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(human)!.Role);
         Assert.Equal(PlayerRole.Zombie, room.Session.GetPlayer(power)!.Role);
+        Assert.True(battle.CardsPlayed.Single(c => c.CardId == TestCards.ZombiePoison.Id).Skipped);
     }
 
     [Fact]
@@ -100,6 +104,7 @@ public class HealInfectionBattleTests
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(human)!.Role);
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(zombie)!.Role);
         Assert.True(room.Session.GetPlayer(human)!.HasShield);
+        Assert.True(battle.CardsPlayed.Single(c => c.CardId == TestCards.ZombiePoison.Id).Skipped);
     }
 
     [Fact]
@@ -124,6 +129,7 @@ public class HealInfectionBattleTests
 
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(human)!.Role);
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(zombie)!.Role);
+        Assert.Equal(2, battle.CardsPlayed.Count(c => c.CardId == TestCards.ZombiePoison.Id && c.Skipped));
     }
 
     [Fact]
@@ -144,6 +150,8 @@ public class HealInfectionBattleTests
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(human)!.Role);
         Assert.Equal(PlayerRole.Human, room.Session.GetPlayer(zombie)!.Role);
         Assert.True(battle.IsFinished);
+        Assert.Contains(battle.CardsPlayed, c => c.CardId == TestCards.Heal.Id && !c.Skipped);
+        Assert.True(battle.CardsPlayed.Where(c => c.CardId == TestCards.ZombiePoison.Id).All(c => c.Skipped));
     }
 
     private static (RoomState Room, Battle Battle, BattleService Service, Guid Human, Guid Zombie) CreateHumanVsZombie(

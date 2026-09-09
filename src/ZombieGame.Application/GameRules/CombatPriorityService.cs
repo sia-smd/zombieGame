@@ -29,6 +29,10 @@ public sealed class CombatPriorityService
     public CardEffectResult? TryHealBeforeInfection(CardEffectContext infectContext)
     {
         var attacker = infectContext.Actor;
+        // Hand Heal may auto-preempt only an already-revealed attacker.
+        // Queued same-battle Heal uses infection-intent in HealHandler / BattleService instead.
+        // Do not use CanHealTargetInCurrentResolution here — that would spend a held (not played)
+        // Heal against the first infection of the day.
         if (!GameCombatRules.CanHealTarget(attacker))
             return null;
 
